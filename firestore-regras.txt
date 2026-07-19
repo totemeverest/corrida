@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// ===================================================================
+//  REGRAS DO FIRESTORE — 2ª Corrida Everest
+//  Projeto: site-corrida  (site-corrida-8e4df)
+//
+//  Cole em: Firebase → Firestore Database → aba "Regras" → PUBLICAR
+// ===================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // O site não tem login: quem acessa é sempre anônimo.
+    // Estas regras não separam admin de visitante — elas limitam
+    // o ESTRAGO que alguém pode causar.
+
+    // Trava de validade: depois desta data o banco fecha sozinho.
+    // A corrida é 20/09/2026; deixei folga até 15/10/2026.
+    // Para estender, mude a data aqui e publique de novo.
+    function noPrazo() {
+      return request.time < timestamp.date(2026, 10, 15);
+    }
+
+    // Limita o tamanho de um campo de texto, se ele existir.
+    function textoAte(campo, max) {
+      return !(campo in request.resource.data)
+             || request.resource.data[campo] == null
+             || (request.resource.data[campo] is string
+                 && request.resource.data[campo].size() <= max);
+    }
+
+    // Barra documento gigante (alguém tentando entupir o banco).
+    // O site grava 23 campos pelo formulário e 29 pelo balcão;
+    // 40 dá folga sem abrir a porteira.
+    function tamanhoSensato() {
+      return request.resource.data.keys().size() <= 40;
+    }
+
+    function camposDeInscricao() {
+      return tamanhoSensato()
+             && textoAte('nome', 120)
+             && textoAte('email', 120)
+             && textoAte('celular', 30)
+             && textoAte('documento', 30)
+             && textoAte('cpf', 30)
+             && textoAte('docTipo', 10)
+             && textoAte('cidade', 80)
+             && textoAte('equipe', 80)
+             && textoAte('emergNome', 120)
+             && textoAte('emergTel', 30)
+             && textoAte('status', 20)
+             && textoAte('camiseta', 6)
+             && textoAte('protocolo', 30)
+             && textoAte('pagamento', 20)
+             && textoAte('genero', 30)
+             && textoAte('origem', 20)
+             && textoAte('motivoDesconto', 200);
+    }
+
+    // ---------------- INSCRIÇÕES ----------------
+    match /inscricoes/{id} {
+
+      allow read: if noPrazo();
+
+      // Qualquer visitante pode se inscrever.
+      allow create: if noPrazo() && camposDeInscricao();
+
+      // Confirmar pagamento, entregar kit, cancelar.
+      allow update: if noPrazo() && camposDeInscricao();
+
+      // NINGUÉM apaga inscrição — nem por engano, nem de propósito.
+      // Cancelar no painel só muda o status; o registro fica.
+      allow delete: if false;
+    }
+
+    // ---------------- CONFIGURAÇÕES (preços, lotes, estoque) ----------------
+    match /config/settings {
+
+      // O site precisa ler os preços antes de qualquer coisa.
+      allow read: if true;
+
+      // Só aceita se continuar tendo cara de settings válido —
+      // evita que uma escrita torta derrube a página inteira.
+      allow write: if noPrazo()
+                   && request.resource.data.keys().hasAll(['versao','camiseta','lotes'])
+                   && request.resource.data.keys().size() <= 20;
+    }
+
+    // ---------------- AUDITORIA (contadores de uso) ----------------
+    match /eventos/{id} {
+      allow read:   if noPrazo();
+      allow create: if noPrazo()
+                    && request.resource.data.keys().size() <= 4
+                    && textoAte('tipo', 40);
+      // histórico não se reescreve
+      allow update, delete: if false;
+    }
+
+    // ---------------- TUDO O MAIS: fechado ----------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

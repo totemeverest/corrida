@@ -1,0 +1,14 @@
+{
+  "name": "enviador-corrida-everest",
+  "version": "1.0.0",
+  "description": "Envia mensagens no WhatsApp para os inscritos da Corrida Everest",
+  "main": "enviar.js",
+  "scripts": {
+    "start": "node enviar.js",
+    "teste": "node enviar.js --teste"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.23.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
