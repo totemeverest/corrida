@@ -486,7 +486,11 @@ footer .fmeta{margin-top:10px}
 .ic-wa{display:inline-block;color:var(--wpp);font-weight:800;font-size:13px;margin-bottom:11px}
 .ic-acoes{display:flex;gap:8px;flex-wrap:wrap}
 .ic-acoes .mini{flex:1 1 auto;padding:11px 12px;font-size:12.5px;margin:0}
-@media(max-width:760px){ .tbl-wrap{display:none} .adm-cards{display:grid} }
+/* A tabela abria rolagem lateral no painel (7 colunas não cabem em 1040px).
+   Usamos os cartões sempre: 1 coluna no celular, 2 no desktop. Nada de rolar de lado. */
+.tbl-wrap{display:none}
+.adm-cards{display:grid;grid-template-columns:1fr}
+@media(min-width:820px){ .adm-cards{grid-template-columns:1fr 1fr;gap:12px} }
 
 .doc-linha{display:grid;grid-template-columns:100px 1fr;gap:8px}
 .doc-linha select{width:100%}
@@ -747,6 +751,40 @@ footer .fmeta{margin-top:10px}
   font-size:11px;font-weight:700;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25)}
 @media(max-width:640px){ .percurso-lupa{display:none} }
 
+.ja-inscrito{margin-top:16px;font-size:13.5px;color:var(--muted);font-weight:600}
+.ja-inscrito a{color:var(--amarelo);text-decoration:underline;text-underline-offset:3px;font-weight:800}
+.ja-inscrito a:hover{color:#fff}
+
+/* ---- consulta de inscrição ---- */
+.cons-busca{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.cons-busca input{flex:1 1 220px;min-width:0;background:rgba(255,255,255,.96);border:1.5px solid transparent;
+  border-radius:12px;padding:14px 15px;font-family:'Montserrat';font-size:15px;color:#221a49;font-weight:600;outline:none}
+.cons-busca input:focus{border-color:var(--amarelo);box-shadow:0 0 0 3px rgba(255,201,60,.25)}
+.cons-busca .btn{flex:0 0 auto;padding:14px 24px}
+.cons-card{background:rgba(255,255,255,.055);border:1px solid var(--line);border-radius:18px;
+  padding:18px;margin-bottom:14px}
+.cons-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.cons-proto{font-family:'Anton',Impact,sans-serif;font-style:italic;font-size:21px;letter-spacing:1px;color:var(--amarelo)}
+.cons-nome{color:#fff;font-weight:800;font-size:14.5px;margin-top:2px}
+.cons-sub{color:var(--muted);font-size:12.5px;margin-top:3px}
+.cons-linhas{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin:14px 0;font-size:13px}
+.cons-linhas div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dashed rgba(196,168,251,.18);padding-bottom:5px}
+.cons-linhas span{color:var(--muted)}
+.cons-linhas b{color:#fff;text-align:right}
+.cons-passo{background:rgba(255,201,60,.09);border:1px solid rgba(255,201,60,.32);border-radius:13px;
+  padding:13px 15px;font-size:13.5px;color:var(--txt);line-height:1.55;margin-bottom:13px}
+.cons-passo b{color:var(--amarelo)}
+.cons-acoes{display:flex;flex-direction:column;gap:9px}
+.cons-vazio{text-align:center;color:var(--muted);padding:26px 10px;font-size:14px;line-height:1.6}
+.cons-alerta{background:rgba(255,201,60,.12);border:1px solid var(--amarelo);border-radius:14px;
+  padding:14px 16px;margin-bottom:16px;font-size:13.5px;line-height:1.55}
+.cons-alerta b{color:var(--amarelo)}
+.cons-outra{width:100%;margin-top:6px;background:transparent;border:1.5px solid var(--line);color:var(--muted);
+  border-radius:999px;padding:13px;font-family:'Montserrat';font-weight:800;font-size:13px;cursor:pointer;
+  text-transform:uppercase;letter-spacing:.4px}
+.cons-outra:hover{border-color:var(--amarelo);color:var(--txt)}
+@media(max-width:520px){ .cons-linhas{grid-template-columns:1fr} .cons-busca .btn{width:100%} }
+
 /* ---- percurso da edição atual (seção Programação) ---- */
 .pa-box{max-width:900px;margin:0 auto 26px}
 .pa-chips{display:flex;flex-wrap:wrap;gap:9px;justify-content:center;margin-bottom:14px}
@@ -802,6 +840,8 @@ footer .fmeta{margin-top:10px}
     <button class="btn btn-cta btn-pulso" onclick="abrirInscricao()"><span>Quero me inscrever</span></button>
   </div>
   <div class="lote-tag" id="loteTag"></div>
+  <p class="ja-inscrito">Já se inscreveu?
+    <a href="#" onclick="abrirConsulta();return false">Consultar minha inscrição</a></p>
 </div>
 
 <section id="sobre">
@@ -933,7 +973,7 @@ footer .fmeta{margin-top:10px}
       </div>
       <label class="checkrow"><input type="checkbox" id="fOptin" checked><span>Quero receber no WhatsApp os avisos desta corrida e novidades da Everest.</span></label>
       <label class="checkrow"><input type="checkbox" id="fTermo"><span>Li e concordo com o <a href="#" onclick="return false">regulamento</a> e declaro estar em condições de saúde para participar da prova.</span></label>
-      <div class="nav-btns"><button class="btn btn-ghost" onclick="passo(1)">Voltar</button><button class="btn btn-cta grow" onclick="passo(3)"><span>Ver resumo</span></button></div>
+      <div class="nav-btns"><button class="btn btn-ghost" onclick="passo(1)">Voltar</button><button class="btn btn-cta grow" id="btnResumo" onclick="passo(3)"><span>Ver resumo</span></button></div>
     </div>
 
     <div class="step-pane" data-step="3">
@@ -975,7 +1015,32 @@ footer .fmeta{margin-top:10px}
         <svg viewBox="0 0 24 24"><path d="M17.6 6.32A7.85 7.85 0 0 0 12.05 4 7.94 7.94 0 0 0 4.1 11.9a7.8 7.8 0 0 0 1.06 3.96L4 20l4.25-1.11a7.94 7.94 0 0 0 3.8.97 7.94 7.94 0 0 0 7.95-7.9 7.85 7.85 0 0 0-2.4-5.64Zm-5.54 12.18a6.6 6.6 0 0 1-3.36-.92l-.24-.14-2.5.65.67-2.43-.16-.25a6.55 6.55 0 0 1-1-3.49 6.6 6.6 0 1 1 6.6 6.57Z"/></svg>
         <span id="sucWppTxt">Enviar comprovante no WhatsApp</span>
       </a>
-      <p style="margin-top:16px"><a href="#" onclick="fecharOverlay('ovSucesso');location.reload();return false" style="color:var(--muted);text-decoration:underline;font-size:13px">Fechar</a></p>
+      <p style="margin-top:18px;color:var(--muted);font-size:12.5px;line-height:1.6;max-width:460px;margin-left:auto;margin-right:auto">
+        <b style="color:#fff">Tire um print desta tela.</b> Com o protocolo você acompanha sua
+        inscrição a qualquer momento em <b style="color:var(--amarelo)">Consultar minha inscrição</b>,
+        na página inicial — e pode reenviar o comprovante se algo falhar.
+      </p>
+      <p style="margin-top:14px"><a href="#" onclick="fecharOverlay('ovSucesso');location.reload();return false" style="color:var(--muted);text-decoration:underline;font-size:13px">Fechar</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- CONSULTA DE INSCRIÇÃO -->
+<div class="overlay" id="ovConsulta">
+  <div class="sheet" style="max-width:640px">
+    <div class="sheet-head">
+      <div><h2>Minha inscrição</h2><p style="color:var(--muted);font-size:13px;margin-top:2px">Consulte pelo seu CPF, RG ou protocolo</p></div>
+      <button class="x" onclick="fecharOverlay('ovConsulta')">&times;</button>
+    </div>
+    <div style="padding:0 4px 4px">
+      <div id="consAviso"></div>
+      <div class="cons-busca">
+        <input id="consInput" type="text" inputmode="text" autocomplete="off"
+               placeholder="CPF, RG ou protocolo (ex: EVR-3OYNC69)"
+               onkeydown="if(event.key==='Enter')buscarConsulta()">
+        <button class="btn btn-cta" id="consBtn" onclick="buscarConsulta()"><span>Consultar</span></button>
+      </div>
+      <div id="consResultado"></div>
     </div>
   </div>
 </div>
@@ -1183,6 +1248,18 @@ const DB = {
   async add(o){ if(fdb){const r=await fdb.collection("inscricoes").add(o);return r.id;} const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");o._id="L"+Date.now();a.push(o);localStorage.setItem(LS_INSC,JSON.stringify(a));return o._id; },
   async list(){ if(fdb){const s=await fdb.collection("inscricoes").orderBy("criadoEm","desc").get();return s.docs.map(d=>({_id:d.id,...d.data()}));} return JSON.parse(localStorage.getItem(LS_INSC)||"[]").sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0)); },
   async update(id,patch){ if(fdb){await fdb.collection("inscricoes").doc(id).update(patch);return;} const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");const i=a.find(x=>x._id===id);if(i){Object.assign(i,patch);localStorage.setItem(LS_INSC,JSON.stringify(a));} },
+  /* Procura inscrições já feitas com o mesmo documento (só os dígitos,
+     pra achar mesmo se a pessoa digitou com ou sem pontuação). */
+  async porDocumento(doc){
+    const alvo=soDigitos(doc); if(alvo.length<5) return [];
+    try{
+      if(fdb){
+        const s=await fdb.collection("inscricoes").get();
+        return s.docs.map(d=>({_id:d.id,...d.data()})).filter(i=>soDigitos(docDe(i))===alvo);
+      }
+      return JSON.parse(localStorage.getItem(LS_INSC)||"[]").filter(i=>soDigitos(docDe(i))===alvo);
+    }catch(e){ console.warn("checagem de duplicidade falhou:",e); return []; }
+  },
   async setStatus(id,status){ return this.update(id,{status}); },
   async evento(tipo){
     try{
@@ -1400,6 +1477,138 @@ function abrirPercursoAtual(){
   const p=CONFIG.percursoAtual||{}; if(!p.img) return;
   abrirImagem(p.img,'Percurso da '+(CONFIG.evento.nome||'corrida'));
 }
+
+/* ===================== CONSULTA DA INSCRIÇÃO =====================
+   O participante acompanha o pedido dele: vê o status, o que falta
+   fazer e reenvia o comprovante no WhatsApp sem precisar de ninguém. */
+
+let consPermitirNova=false;
+function abrirConsulta(preenche, aviso, permitirNova){
+  consPermitirNova = !!permitirNova;
+  el('consAviso').innerHTML = aviso ? `<div class="cons-alerta">${aviso}</div>` : '';
+  el('consInput').value = preenche || '';
+  el('consResultado').innerHTML = '';
+  // Se veio do meio da inscrição, troca a tela em vez de empilhar overlay.
+  if(el('ovInscricao').classList.contains('open')) trocarOverlay('ovInscricao','ovConsulta');
+  else abrirOverlay('ovConsulta');
+  if(preenche) buscarConsulta();
+  else setTimeout(()=>el('consInput').focus(),120);
+}
+/* Volta pro formulário e segue pro resumo, mesmo já tendo inscrição. */
+function continuarNovaInscricao(){
+  DB.evento('seguiu_mesmo_com_duplicado');
+  consPermitirNova=false;
+  trocarOverlay('ovConsulta','ovInscricao');
+  renderResumo();
+  irPasso(3);
+}
+
+/* Mensagem que o PARTICIPANTE manda pra Everest, já com o contexto certo. */
+function msgParticipante(i){
+  const base = `Olá! Sobre a minha inscrição na ${CONFIG.evento.nome}.%0A`
+    + `Protocolo: ${i.protocolo}%0ANome: ${i.nome}%0A`
+    + `Camiseta: ${i.camiseta||'—'}%0AValor: ${BRL(i.valor||0)}%0A`
+    + `Forma: ${i.pagamento||'—'}%0A%0A`;
+  if(i.status==='cancelado')  return base+'Minha inscrição consta como *cancelada*. Podem verificar?';
+  if(i.status==='confirmado') return base+(i.kitRetirado
+      ? 'Tudo certo por aqui! Tenho uma dúvida:'
+      : 'Pagamento já confirmado. Quero saber sobre a retirada do kit.');
+  if(i.pagamento==='Dinheiro') return base+'Vou pagar em dinheiro na recepção da Everest.';
+  if(i.pagamento==='Cartão')   return base+'Estou pagando no *cartão*. Segue o comprovante 👇';
+  return base+'Segue o comprovante do PIX 👇';
+}
+
+function buscarConsulta(){
+  const termo=(el('consInput').value||'').trim();
+  const alvo=el('consResultado');
+  if(termo.length<4){ alvo.innerHTML='<div class="cons-vazio">Digite seu CPF, RG ou o protocolo completo.</div>'; return; }
+  const btn=el('consBtn'); btn.disabled=true; btn.innerHTML='<span>Procurando...</span>';
+  alvo.innerHTML='<div class="cons-vazio">Procurando sua inscrição...</div>';
+
+  DB.list().then(todas=>{
+    const q=normaliza(termo), qd=soDigitos(termo);
+    const achou=todas.filter(i=>{
+      if(normaliza(i.protocolo)===q) return true;
+      if(qd.length>=5 && soDigitos(docDe(i))===qd) return true;
+      return false;
+    });
+    renderConsulta(achou, termo);
+  }).catch(e=>{
+    console.error(e);
+    alvo.innerHTML='<div class="cons-vazio">Não consegui consultar agora. Verifique sua internet e tente de novo.</div>';
+  }).finally(()=>{ btn.disabled=false; btn.innerHTML='<span>Consultar</span>'; });
+}
+
+function renderConsulta(lista, termo){
+  const alvo=el('consResultado');
+  if(!lista.length){
+    alvo.innerHTML=`<div class="cons-vazio">
+      Não achei nenhuma inscrição com <b style="color:#fff">${esc(termo)}</b>.<br><br>
+      Confira se digitou certo. Se você acabou de se inscrever, aguarde alguns segundos e tente de novo.
+      <div style="margin-top:18px"><a class="btn btn-cta" href="https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent('Olá! Não estou achando minha inscrição na '+CONFIG.evento.nome+'. Podem me ajudar?')}" target="_blank" rel="noopener" style="padding:13px 24px;font-size:14px"><span>Falar com a Everest</span></a></div>
+    </div>`;
+    return;
+  }
+  lista.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+  alvo.innerHTML = lista.map(i=>{
+    const pend = i.status==='pendente', canc = i.status==='cancelado', conf = i.status==='confirmado';
+    const badge = canc ? '<span class="badge b-canc">cancelada</span>'
+                : conf ? (i.kitRetirado ? '<span class="badge b-ok">kit retirado</span>' : '<span class="badge b-ok">pagamento confirmado</span>')
+                : '<span class="badge b-pend">aguardando pagamento</span>';
+
+    let passo='', acoes='';
+    if(canc){
+      passo = 'Esta inscrição está <b>cancelada</b>. Se isso foi engano, fale com a gente que resolvemos.';
+    } else if(conf){
+      passo = i.kitRetirado
+        ? `Tudo pronto! Kit retirado. Nos vemos dia <b>${esc(CONFIG.evento.data)}</b>, largada às <b>6h</b>.`
+        : `Pagamento <b>confirmado</b> — sua vaga está garantida. A retirada do kit começa em <b>${esc(CONFIG.evento.retiradaKit)}</b>, na recepção da Everest. Leve um documento com foto.`;
+    } else {
+      const lk = linkParaValor(i.valor);
+      if(i.pagamento==='PIX'){
+        passo = `Falta o pagamento. Faça o PIX de <b>${BRL(i.valor||0)}</b> e envie o comprovante no WhatsApp com o seu protocolo.`;
+        acoes += `<div class="pix-box" style="margin-bottom:10px"><b style="color:#fff;font-style:italic;text-transform:uppercase">Chave PIX</b>
+          <div style="color:var(--muted);font-size:12.5px;margin-top:5px">Favorecido: ${esc(CONFIG.pix.favorecido)}</div>
+          <div class="pk"><code>${esc(CONFIG.pix.chave)}</code><button onclick="copiarPix()">Copiar</button></div></div>`;
+      } else if(i.pagamento==='Cartão'){
+        passo = `Falta o pagamento. Pague no cartão em até <b>3x sem juros</b> e envie o comprovante no WhatsApp.`;
+        if(lk) acoes += `<a class="btn btn-cta" href="${esc(lk)}" target="_blank" rel="noopener" style="justify-content:center"><span>Pagar ${BRL(i.valor||0)} no cartão</span></a>`;
+      } else {
+        passo = `Falta o pagamento. Vá até a recepção da Everest — <b>${esc(CONFIG.evento.endereco)}</b> — e informe o seu protocolo.`;
+      }
+    }
+
+    acoes += `<a class="wpp-btn" href="https://wa.me/${CONFIG.whatsapp}?text=${msgParticipante(i)}" target="_blank" rel="noopener" style="margin-top:0">
+      <svg viewBox="0 0 24 24"><path d="M17.6 6.32A7.85 7.85 0 0 0 12.05 4 7.94 7.94 0 0 0 4.1 11.9a7.8 7.8 0 0 0 1.06 3.96L4 20l4.25-1.11a7.94 7.94 0 0 0 3.8.97 7.94 7.94 0 0 0 7.95-7.9 7.85 7.85 0 0 0-2.4-5.64Zm-5.54 12.18a6.6 6.6 0 0 1-3.36-.92l-.24-.14-2.5.65.67-2.43-.16-.25a6.55 6.55 0 0 1-1-3.49 6.6 6.6 0 1 1 6.6 6.57Z"/></svg>
+      <span>${pend?'Enviar comprovante no WhatsApp':'Falar com a Everest'}</span></a>`;
+
+    return `<div class="cons-card">
+      <div class="cons-topo">
+        <div>
+          <div class="cons-proto">${esc(i.protocolo||'—')}</div>
+          <div class="cons-nome">${esc(i.nome)}</div>
+          <div class="cons-sub">Inscrição feita em ${dataBR(i.criadoEm)}</div>
+        </div>
+        <div>${badge}</div>
+      </div>
+      <div class="cons-linhas">
+        <div><span>Distância</span><b>${esc(i.distancia||'—')}</b></div>
+        <div><span>Camiseta</span><b>${esc(i.camiseta||'—')}</b></div>
+        <div><span>Valor</span><b>${BRL(i.valor||0)}</b></div>
+        <div><span>Pagamento</span><b>${esc(i.pagamento||'—')}</b></div>
+      </div>
+      <div class="cons-passo">${passo}</div>
+      <div class="cons-acoes">${acoes}</div>
+    </div>`;
+  }).join('');
+
+  if(consPermitirNova){
+    alvo.innerHTML += `<button class="cons-outra" onclick="continuarNovaInscricao()">
+      Quero fazer outra inscrição mesmo assim</button>
+      <p style="color:var(--muted);font-size:11.5px;text-align:center;margin-top:9px;line-height:1.5">
+      Use isto só se for inscrever <b>outra pessoa</b> ou se combinou com a organização.</p>`;
+  }
+}
 function renderThumbs(){
   const fs=fotosGal(), c=el('thumbs'), dica=el('thumbsDica');
   if(!fs.length){ c.style.display='none'; dica.style.display='none'; return; }
@@ -1458,6 +1667,7 @@ function abrirInscricao(distId){
       <div class="pd">${d.desc||""}</div></div>`;}).join("");
   renderSizes();
   sel.pay="PIX"; document.querySelectorAll('.pay').forEach(p=>p.classList.toggle('sel',p.dataset.pay==='PIX')); avisoPag();
+  if(el('ovConsulta').classList.contains('open')) el('ovConsulta').classList.remove('open');
   irPasso(1); abrirOverlay('ovInscricao');
 }
 function renderSizes(){
@@ -1481,7 +1691,7 @@ function avisoPag(){
 function irPasso(n){ document.querySelectorAll('#ovInscricao .step-pane').forEach(p=>p.classList.toggle('on',+p.dataset.step===n)); document.querySelectorAll('#ovInscricao .step-dot').forEach((d,i)=>d.classList.toggle('on',i<n)); el('ovInscricao').scrollTop=0; }
 function markErr(id,bad){ const f=el(id).closest('.field')||el(id).parentElement; f.classList.toggle('err',bad); return !bad; }
 
-function passo(n){
+async function passo(n){
   if(n===2){ if(!sel.camiseta){ toast("Escolha um tamanho de camiseta disponível"); return; } DB.evento("escolheu_tamanho"); }
   if(n===3){
     let ok=true, aviso='';
@@ -1504,6 +1714,30 @@ function passo(n){
     });
     if(!el('fTermo').checked){ ok=false; if(!aviso) aviso='Você precisa aceitar o regulamento'; }
     if(!ok){ toast(aviso); DB.evento("erro_formulario"); return; }
+
+    /* Já existe inscrição com esse documento? Avisa antes de deixar seguir.
+       Não bloqueia: pode ser segunda inscrição legítima (a primeira foi
+       cancelada, ou a pessoa está inscrevendo um familiar por engano). */
+    const btnRes=el('btnResumo');
+    if(btnRes){ btnRes.disabled=true; btnRes.innerHTML='<span>Conferindo...</span>'; }
+    let iguais=[];
+    try{ iguais = await DB.porDocumento(el('fDoc').value); }
+    catch(e){ console.warn(e); }
+    if(btnRes){ btnRes.disabled=false; btnRes.innerHTML='<span>Ver resumo</span>'; }
+
+    const ativas = iguais.filter(i=>i.status!=='cancelado');
+    if(ativas.length){
+      DB.evento('aviso_documento_repetido');
+      const tipo = el('fDocTipo').value;
+      abrirConsulta(el('fDoc').value,
+        `<b>Você já tem inscrição nesta corrida.</b><br>
+         Encontrei ${ativas.length===1?'uma inscrição':ativas.length+' inscrições'} com este ${esc(tipo)}.
+         Confira abaixo o status — se estiver aguardando pagamento, é só reenviar o comprovante.
+         <b>Não precisa se inscrever de novo.</b>`,
+        true);
+      return;
+    }
+
     DB.evento("preencheu_dados");
     renderResumo();
   }
@@ -1588,7 +1822,7 @@ async function gerarInscricao(){
     const fim = ehPix ? 'Segue o comprovante do pagamento 👇' : ehCartao ? (lkCartao ? 'Paguei no *cartão* pelo link. Segue o comprovante 👇' : 'Quero pagar no *cartão* em até 3x sem juros. Podem me enviar o link de pagamento?') : 'Vou pagar em dinheiro na recepção.';
     const msg=`Olá! Fiz minha inscrição na ${CONFIG.evento.nome}.%0AProtocolo: ${proto}%0ANome: ${insc.nome}%0ADistância: ${insc.distancia}%0ACamiseta: ${insc.camiseta}%0AValor: ${BRL(total)}%0AForma: ${insc.pagamento}%0A${fim}`;
     el('sucWpp').href="https://wa.me/"+CONFIG.whatsapp+"?text="+msg;
-    fecharOverlay('ovInscricao'); abrirOverlay('ovSucesso');
+    trocarOverlay('ovInscricao','ovSucesso');
   }catch(e){ console.error(e); toast("Erro ao salvar. Tente de novo."); }
   finally{ btn.disabled=false; btn.innerHTML="<span>Gerar inscrição</span>"; }
 }
@@ -2592,8 +2826,19 @@ function fecharOverlay(id){
   el(id).classList.remove('open'); document.body.style.overflow='';
   try{ if(history.state && history.state.ov===id) history.back(); }catch(e){}
 }
+/* Troca de um overlay para outro SEM passar pelo history.back().
+   O back() é assíncrono: o popstate chegava depois e fechava a tela
+   que a gente tinha acabado de abrir (a de sucesso sumia sozinha).
+   Aqui trocamos o estado no lugar — o botão voltar continua fechando. */
+function trocarOverlay(de, para){
+  const a=el(de), b=el(para);
+  if(a) a.classList.remove('open');
+  if(b) b.classList.add('open');
+  document.body.style.overflow='hidden';
+  try{ history.replaceState({ov:para},''); }catch(e){}
+}
 window.addEventListener('popstate',()=>{
-  ['ovInscricao','ovSucesso','ovAdmin'].forEach(id=>{ const o=el(id); if(o&&o.classList.contains('open')) o.classList.remove('open'); });
+  ['ovInscricao','ovSucesso','ovConsulta','ovAdmin'].forEach(id=>{ const o=el(id); if(o&&o.classList.contains('open')) o.classList.remove('open'); });
   const lb=el('lightbox'); if(lb&&lb.classList.contains('open')) lb.classList.remove('open');
   document.body.style.overflow='';
 });
@@ -2601,6 +2846,7 @@ document.addEventListener('keydown',e=>{
   if(e.key!=='Escape') return;
   if(el('lightbox').classList.contains('open')) return;
   if(el('ovSucesso').classList.contains('open')){ fecharOverlay('ovSucesso'); location.reload(); return; }
+  if(el('ovConsulta').classList.contains('open')){ fecharOverlay('ovConsulta'); return; }
   if(el('ovInscricao').classList.contains('open')){ fecharOverlay('ovInscricao'); return; }
   if(el('ovAdmin').classList.contains('open')){ fecharOverlay('ovAdmin'); location.hash=''; }
 });
