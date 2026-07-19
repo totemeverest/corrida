@@ -3,7 +3,10 @@
 Site de inscrição da 2ª Corrida Everest (Gravatá/PE — 20/09/2026).
 Tudo roda em um único arquivo: `index.html` (HTML + CSS + JS, com as logos embutidas).
 
-**Site publicado:** https://darlissondarlan.github.io/corridaeverest/
+**Site publicado:** https://everestacademias.com/corrida/
+
+Hospedado no GitHub Pages. A raiz `everestacademias.com` é servida pelo repositório
+`totemeverest.github.io` (página "em breve"); este repositório vira o caminho `/corrida`.
 
 ---
 
@@ -20,7 +23,8 @@ Tudo roda em um único arquivo: `index.html` (HTML + CSS + JS, com as logos embu
 ## Painel do organizador
 
 - Acesse pelo link "Área do organizador" no rodapé, ou adicione `#admin` na URL.
-- Abas: **Inscrições** (confirmar/cancelar), **Ajustes & estoque** (lotes, preços, estoque, kit) e **Divulgação** (gerar QR code).
+- Abas: **Inscrições** (confirmar/cancelar), **Balcão** (venda presencial), **Ajustes & estoque**
+  (lotes, preços, estoque, kit), **WhatsApp**, **Auditoria** e **Divulgação** (gerar QR code).
 
 ## Onde editar as informações
 
@@ -37,9 +41,18 @@ Para funcionar de verdade, é preciso preencher `CONFIG.firebase` com os dados d
 
 ## Pendências
 
-- [ ] Conectar o Firebase (sair do modo demo)
-- [ ] Traçado do percurso
+- [ ] Conectar o Firebase (sair do modo demo) — **e escrever as regras de segurança do Firestore**
+- [ ] Marcar "Enforce HTTPS" na tela de Pages do repositório `totemeverest.github.io`
+- [ ] Aba "Captação de dados" (base de contatos para as próximas edições)
 - [ ] Premiação
 - [ ] Idade mínima
-- [ ] Fotos da 1ª edição (galeria)
 - [ ] Logos dos patrocinadores
+- [x] Traçado do percurso (`percurso-2a-edicao.svg`)
+- [x] Fotos da 1ª edição (galeria)
+- [x] Domínio próprio
+
+## Atenção
+
+A senha do painel (`adminSenha` no CONFIG) fica legível no `index.html`, e este repositório
+é público. Ela serve para evitar acesso casual, não para proteger dados. A proteção real
+tem que vir das regras de segurança do Firestore.
