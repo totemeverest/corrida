@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" width="1000" height="500" role="img" aria-label="Percurso da 2ª Corrida Everest: largada na Everest Academia, gancho de saída, 3,2 km pela Rua 4 de Outubro até o Privê Maisons de France e volta pelo mesmo trajeto">
+  <title>Percurso da 2ª Corrida Everest — 6,4 km ida e volta</title>
+  <defs>
+    <linearGradient id="fundo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a1263"/><stop offset="58%" stop-color="#1d0f47"/><stop offset="100%" stop-color="#120829"/>
+    </linearGradient>
+    <radialGradient id="aurora" cx="22%" cy="8%" r="70%">
+      <stop offset="0%" stop-color="#8f5cff" stop-opacity=".38"/><stop offset="100%" stop-color="#8f5cff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aurora2" cx="88%" cy="96%" r="62%">
+      <stop offset="0%" stop-color="#2fd8d0" stop-opacity=".16"/><stop offset="100%" stop-color="#2fd8d0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ouro" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff2b8"/><stop offset="42%" stop-color="#ffd24a"/><stop offset="100%" stop-color="#ff9d17"/>
+    </linearGradient>
+    <linearGradient id="volta" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7cffe6"/><stop offset="50%" stop-color="#39d7f5"/><stop offset="100%" stop-color="#2f9bff"/>
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowFraco" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="14"/></filter>
+    <path id="ida" d="M899.3 219.8 C893.7 220.5, 875.6 223.7, 866.1 223.8 C856.7 223.9, 847.9 222.0, 842.5 220.3 C837.2 218.7, 835.1 216.0, 833.8 213.8 C832.6 211.7, 832.7 209.7, 835.0 207.7 C837.3 205.7, 841.4 203.2, 847.7 202.0 C853.9 200.7, 865.0 200.9, 872.6 200.2 C880.1 199.4, 887.3 200.7, 892.9 197.5 C898.5 194.2, 905.7 187.6, 906.1 180.9 C906.6 174.1, 903.2 161.4, 895.5 156.9 C887.8 152.4, 876.5 153.6, 860.0 153.8 C843.5 154.0, 817.0 156.0, 796.4 157.8 C775.9 159.7, 752.3 161.9, 736.6 164.9 C721.0 168.0, 712.2 171.8, 702.3 176.4 C692.4 181.0, 687.3 187.4, 677.2 192.5 C667.0 197.6, 656.2 203.4, 641.4 207.0 C626.6 210.6, 607.7 211.5, 588.3 213.8 C568.9 216.2, 542.7 218.3, 525.1 220.9 C507.4 223.4, 496.4 225.5, 482.5 229.0 C468.5 232.5, 455.3 238.3, 441.4 242.0 C427.6 245.7, 413.5 247.3, 399.4 251.0 C385.3 254.7, 370.8 259.1, 356.9 264.2 C342.9 269.2, 329.5 275.9, 315.8 281.2 C302.0 286.5, 288.0 292.2, 274.4 296.0 C260.7 299.8, 247.5 300.9, 233.7 303.9 C219.8 306.9, 205.4 309.8, 191.2 314.1 C177.0 318.3, 162.0 323.5, 148.5 329.3 C135.1 335.1, 120.2 342.8, 110.6 348.8 C101.0 354.8, 94.3 362.5, 91.0 365.3"/>
+    <path id="vol" d="M99.0 374.7 C102.1 372.1, 108.4 364.8, 117.4 359.2 C126.5 353.5, 140.6 346.2, 153.5 340.7 C166.4 335.2, 181.0 330.0, 194.8 325.9 C208.6 321.8, 222.5 319.1, 236.3 316.1 C250.1 313.1, 263.7 311.9, 277.6 308.0 C291.6 304.1, 306.3 298.1, 320.2 292.8 C334.1 287.4, 347.4 280.8, 361.1 275.8 C374.8 270.9, 388.7 266.6, 402.6 263.0 C416.5 259.4, 430.8 257.7, 444.6 254.0 C458.4 250.3, 471.8 244.5, 485.5 241.0 C499.2 237.5, 509.6 235.6, 526.9 233.1 C544.3 230.7, 570.1 228.5, 589.7 226.2 C609.3 223.8, 629.1 222.8, 644.6 219.0 C660.1 215.2, 672.3 208.7, 682.8 203.5 C693.4 198.3, 698.3 192.0, 707.7 187.6 C717.1 183.2, 724.4 180.0, 739.4 177.1 C754.3 174.1, 777.5 172.0, 797.6 170.2 C817.7 168.4, 844.9 166.7, 860.0 166.2 C875.2 165.7, 882.8 164.9, 888.5 167.1 C894.1 169.2, 894.1 175.9, 893.9 179.1 C893.6 182.4, 890.8 185.1, 887.1 186.5 C883.3 188.0, 878.5 187.2, 871.4 187.8 C864.3 188.4, 852.1 187.9, 844.3 190.0 C836.6 192.1, 828.7 195.6, 825.0 200.3 C821.3 205.0, 820.1 212.9, 822.2 218.2 C824.3 223.4, 830.2 228.6, 837.5 231.7 C844.7 234.7, 855.3 236.1, 865.9 236.2 C876.4 236.3, 894.9 232.8, 900.7 232.2"/>
+  </defs>
+
+  <rect width="1000" height="500" fill="url(#fundo)"/>
+  <rect width="1000" height="500" fill="url(#aurora)"/><rect width="1000" height="500" fill="url(#aurora2)"/>
+
+  <g stroke="#fff" stroke-opacity=".045" stroke-width="2" fill="none">
+    <path d="M0 288 L1000 164"/><path d="M0 380 L1000 246"/><path d="M0 472 L1000 328"/>
+    <path d="M300 178 L262 500"/><path d="M470 166 L432 500"/>
+    <path d="M640 154 L604 500"/><path d="M812 140 L778 500"/>
+  </g>
+
+  <g fill="none" stroke-linecap="round">
+    <path d="M1020 62 C 920 80, 862 90, 818 96 C 700 118, 560 156, 460 178 C 400 190, 340 208, 280 234 C 250 246, 222 256, 196 266 C 150 284, 90 296, -20 304" stroke="#3f7fd6" stroke-opacity=".3" stroke-width="15"/>
+    <path d="M1020 62 C 920 80, 862 90, 818 96 C 700 118, 560 156, 460 178 C 400 190, 340 208, 280 234 C 250 246, 222 256, 196 266 C 150 284, 90 296, -20 304" stroke="#9fd9ff" stroke-opacity=".17" stroke-width="4"/>
+  </g>
+  <text x="430" y="164" fill="#9fd9ff" fill-opacity=".5" font-family="Montserrat,Arial,sans-serif"
+        font-size="13" font-style="italic" letter-spacing="1" text-anchor="middle"
+        transform="rotate(-16 430 164)">Rio Ipojuca</text>
+
+  <path d="M236 296 C 320 282, 410 288, 470 312 C 500 362, 460 438, 372 448 L 232 442 Z"
+        fill="#3ee88f" fill-opacity=".05"/>
+
+  <!-- brilho -->
+  <use href="#ida" stroke="#ffd24a" stroke-opacity=".2" stroke-width="26" fill="none" stroke-linecap="round" filter="url(#glowFraco)"/>
+  <use href="#vol" stroke="#39d7f5" stroke-opacity=".18" stroke-width="24" fill="none" stroke-linecap="round" filter="url(#glowFraco)"/>
+
+  <!-- contorno -->
+  <g stroke="#120829" stroke-opacity=".6" stroke-width="13.5" fill="none" stroke-linecap="round">
+    <use href="#vol"/><path d="M900.7 232.2 C906 232, 909 230, 909 226"/><path d="M48 374 C48 387, 76 386, 99.0 374.7"/>
+    <use href="#ida"/><path d="M909 226 C909 222, 906 220, 899.3 219.8"/><path d="M91.0 365.3 C74 354, 48 361, 48 374"/>
+  </g>
+
+  <!-- VOLTA -->
+  <g stroke="url(#volta)" stroke-width="7.5" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <use href="#vol"/><path d="M48 374 C48 387, 76 386, 99.0 374.7"/><path d="M900.7 232.2 C906 232, 909 230, 909 226"/>
+  </g>
+  <!-- IDA -->
+  <g stroke="url(#ouro)" stroke-width="7.5" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <use href="#ida"/><path d="M909 226 C909 222, 906 220, 899.3 219.8"/><path d="M91.0 365.3 C74 354, 48 361, 48 374"/>
+  </g>
+
+  <g fill="#120829">
+    <path d="M860 209.5 l12 5.5 l-12 5.5 z" transform="rotate(180 860 215)" fill-opacity=".85"/>
+    <path d="M860 189.5 l12 5.5 l-12 5.5 z" transform="rotate(-8 860 195)" fill-opacity=".85"/>
+    <path d="M872 149.5 l12 5.5 l-12 5.5 z" transform="rotate(-175 872 155)" fill-opacity=".85"/>
+    <path d="M656 195.5 l12 5.5 l-12 5.5 z" transform="rotate(158 656 201)" fill-opacity=".85"/>
+    <path d="M455 232.5 l12 5.5 l-12 5.5 z" transform="rotate(162 455 238)" fill-opacity=".85"/>
+    <path d="M260 293.5 l12 5.5 l-12 5.5 z" transform="rotate(169 260 299)" fill-opacity=".85"/>
+  </g>
+  <g fill="#120829">
+    <path d="M306 292.5 l12 5.5 l-12 5.5 z" transform="rotate(-20 306 298)" fill-opacity=".8"/>
+    <path d="M530 227.5 l12 5.5 l-12 5.5 z" transform="rotate(-6 530 233)" fill-opacity=".8"/>
+    <path d="M754 169.5 l12 5.5 l-12 5.5 z" transform="rotate(-7 754 175)" fill-opacity=".8"/>
+    <path d="M842 185.5 l12 5.5 l-12 5.5 z" transform="rotate(152 842 191)" fill-opacity=".8"/>
+  </g>
+
+  <!-- quilometragem -->
+  <g font-family="Montserrat,Arial,sans-serif" font-size="11" font-weight="800" text-anchor="middle">
+    <circle cx="757" cy="162" r="12" fill="#120829" stroke="#ffd24a" stroke-width="2.2"/><text x="757" y="166" fill="#ffd24a">1</text>
+    <circle cx="450" cy="239" r="12" fill="#120829" stroke="#ffd24a" stroke-width="2.2"/><text x="450" y="243" fill="#ffd24a">2</text>
+    <circle cx="145" cy="331" r="12" fill="#120829" stroke="#ffd24a" stroke-width="2.2"/><text x="145" y="335" fill="#ffd24a">3</text>
+  </g>
+  <g font-size="8" font-weight="700" fill="#ffd24a" fill-opacity=".55" text-anchor="middle"><text x="757" y="183">KM</text><text x="450" y="260">KM</text><text x="145" y="352">KM</text></g>
+
+  <!-- hidratação -->
+  <g>
+    <line x1="620" y1="239" x2="620" y2="229" stroke="#7cffe6" stroke-opacity=".5" stroke-width="2" stroke-dasharray="3 3"/>
+    <circle cx="620" cy="251" r="13" fill="#0f2a3d" stroke="#7cffe6" stroke-width="2.2"/>
+    <path d="M620 245 C623.6 249.5, 625.52 251.6, 625.52 253.52 a5.5200000000000005 5.5200000000000005 0 0 1 -11.040000000000001 0 C614.48 251.6, 616.4 249.5, 620 245 z" fill="#7cffe6"/>
+    <text x="620" y="275" text-anchor="middle" fill="#7cffe6" fill-opacity=".9" font-family="Montserrat,Arial,sans-serif" font-size="10" font-weight="800" letter-spacing=".6">HIDRATAÇÃO</text>
+    <text x="620" y="287" text-anchor="middle" fill="#7cffe6" fill-opacity=".5" font-family="Montserrat,Arial,sans-serif" font-size="9" font-weight="700">1,6 km · 4,8 km</text>
+  </g>
+  <g>
+    <line x1="275" y1="324" x2="275" y2="314" stroke="#7cffe6" stroke-opacity=".5" stroke-width="2" stroke-dasharray="3 3"/>
+    <circle cx="275" cy="336" r="13" fill="#0f2a3d" stroke="#7cffe6" stroke-width="2.2"/>
+    <path d="M275 330 C278.6 334.5, 280.52 336.6, 280.52 338.52 a5.5200000000000005 5.5200000000000005 0 0 1 -11.040000000000001 0 C269.48 336.6, 271.4 334.5, 275 330 z" fill="#7cffe6"/>
+    <text x="275" y="360" text-anchor="middle" fill="#7cffe6" fill-opacity=".9" font-family="Montserrat,Arial,sans-serif" font-size="10" font-weight="800" letter-spacing=".6">HIDRATAÇÃO</text>
+    <text x="275" y="372" text-anchor="middle" fill="#7cffe6" fill-opacity=".5" font-family="Montserrat,Arial,sans-serif" font-size="9" font-weight="700">2,6 km · 3,8 km</text>
+  </g>
+
+  <!-- referências, fora do traçado -->
+  <g fill="#fff" font-family="Montserrat,Arial,sans-serif" font-size="11" font-weight="600">
+    <circle cx="790" cy="122" r="3.5" fill-opacity=".55"/>
+    <text x="776" y="126" text-anchor="end" fill-opacity=".5">Parque Janelas para o Rio</text>
+    <circle cx="651" cy="184" r="3.5" fill-opacity=".55"/>
+    <line x1="649" y1="180" x2="643" y2="164" stroke="#fff" stroke-opacity=".2" stroke-width="1.5"/>
+    <text x="639" y="158" text-anchor="end" fill-opacity=".5">Escola Técnica</text>
+    <circle cx="574" cy="215" r="3.5" fill-opacity=".65"/>
+    <line x1="574" y1="211" x2="574" y2="196" stroke="#fff" stroke-opacity=".2" stroke-width="1.5"/>
+    <text x="600" y="190" text-anchor="end" fill-opacity=".5">Hotel Porto da Serra</text>
+    <circle cx="401" cy="251" r="3.5" fill-opacity=".65"/>
+    <line x1="399" y1="255" x2="392" y2="284" stroke="#fff" stroke-opacity=".2" stroke-width="1.5"/>
+    <text x="430" y="298" text-anchor="end" fill-opacity=".5">Igreja N. Sra. Aparecida</text>
+  </g>
+
+  <text x="520" y="308" fill="#fff" fill-opacity=".6" font-family="Montserrat,Arial,sans-serif"
+        font-size="14" font-weight="700" letter-spacing=".5" text-anchor="middle"
+        transform="rotate(-18 520 308)">R. 4 de Outubro</text>
+
+  <!-- LARGADA / CHEGADA -->
+  <g>
+    <circle cx="909" cy="226" r="27" fill="#ffd24a" fill-opacity=".14"/>
+    <circle cx="909" cy="226" r="16" fill="#120829" stroke="#ffd24a" stroke-width="2.6"/>
+    <clipPath id="flag2"><circle cx="909" cy="226" r="13"/></clipPath><g clip-path="url(#flag2)"><rect x="896" y="213" width="26" height="26" fill="#ffd24a"/><g fill="#120829"><rect x="896.0" y="213.0" width="6.5" height="6.5"/><rect x="909.0" y="213.0" width="6.5" height="6.5"/><rect x="902.5" y="219.5" width="6.5" height="6.5"/><rect x="915.5" y="219.5" width="6.5" height="6.5"/><rect x="896.0" y="226.0" width="6.5" height="6.5"/><rect x="909.0" y="226.0" width="6.5" height="6.5"/><rect x="902.5" y="232.5" width="6.5" height="6.5"/><rect x="915.5" y="232.5" width="6.5" height="6.5"/></g></g>
+    <rect x="672" y="268" width="248" height="58" rx="15" fill="url(#ouro)"/>
+    <text x="796" y="293" text-anchor="middle" fill="#120829" font-family="Anton,Impact,sans-serif" font-size="20" font-style="italic" letter-spacing=".8">LARGADA / CHEGADA</text>
+    <text x="796" y="313" text-anchor="middle" fill="#120829" fill-opacity=".8" font-family="Montserrat,Arial,sans-serif" font-size="12" font-weight="800">Everest Academia · 6h</text>
+  </g>
+
+  <!-- RETORNO -->
+  <g>
+    <circle cx="48" cy="374" r="26" fill="#39d7f5" fill-opacity=".15"/>
+    <circle cx="48" cy="374" r="15" fill="#7cffe6" stroke="#120829" stroke-width="2.6"/>
+    <path d="M42 381 L42 372 A6 6 0 0 1 54 372 L54 376" stroke="#120829" stroke-width="2.7" fill="none" stroke-linecap="round"/>
+    <path d="M49.5 375 L58.5 375 L54 382 z" fill="#120829"/>
+    <rect x="92" y="404" width="228" height="50" rx="14" fill="#39d7f5" fill-opacity=".12" stroke="#39d7f5" stroke-opacity=".45"/>
+    <text x="206" y="425" text-anchor="middle" fill="#fff" font-family="Anton,Impact,sans-serif" font-size="16" font-style="italic" letter-spacing=".8">RETORNO · 3,2 KM</text>
+    <text x="206" y="443" text-anchor="middle" fill="#a9f3e6" font-family="Montserrat,Arial,sans-serif" font-size="11" font-weight="600">Privê Maisons de France</text>
+  </g>
+
+  <text x="34" y="48" fill="#fff" font-family="Anton,Impact,sans-serif" font-size="26" font-style="italic" letter-spacing="1">PERCURSO DA 2ª CORRIDA EVEREST</text>
+  <text x="34" y="82" fill="#c9b8f5" font-family="Montserrat,Arial,sans-serif" font-size="13" font-weight="600">Gravatá – PE</text>
+  
+  <rect x="34" y="94" width="152" height="28" rx="14" fill="#fff" fill-opacity=".07" stroke="#fff" stroke-opacity=".16"/>
+  <text x="110" y="112" text-anchor="middle" fill="#fff" font-family="Montserrat,Arial,sans-serif" font-size="11.5" font-weight="800">20 DE SETEMBRO · 2026</text>
+  <rect x="194" y="94" width="98" height="28" rx="14" fill="#fff" fill-opacity=".07" stroke="#fff" stroke-opacity=".16"/>
+  <text x="243" y="112" text-anchor="middle" fill="#ffd24a" font-family="Montserrat,Arial,sans-serif" font-size="11.5" font-weight="800">LARGADA 6H</text>
+  <rect x="34" y="58" width="120" height="3" rx="2" fill="url(#ouro)"/>
+
+  <g font-family="Montserrat,Arial,sans-serif" font-size="12.5" font-weight="700">
+    <rect x="586" y="16" width="386" height="90" rx="18" fill="#120829" fill-opacity=".6" stroke="#fff" stroke-opacity=".16"/>
+    <line x1="608" y1="41" x2="646" y2="41" stroke="url(#ouro)" stroke-width="7" stroke-linecap="round"/>
+    <text x="658" y="46" fill="#ffd24a">IDA · 3,2 km</text>
+    <line x1="608" y1="65" x2="646" y2="65" stroke="url(#volta)" stroke-width="7" stroke-linecap="round"/>
+    <text x="658" y="70" fill="#7cffe6">VOLTA · 3,2 km</text>
+    <circle cx="627" cy="88" r="9.5" fill="#0f2a3d" stroke="#7cffe6" stroke-width="2"/>
+    <path d="M627 83.8 C629.52 86.95, 630.864 88.42, 630.864 89.764 a3.8640000000000003 3.8640000000000003 0 0 1 -7.728000000000001 0 C623.136 88.42, 624.48 86.95, 627 83.8 z" fill="#7cffe6"/>
+    <text x="658" y="93" fill="#a9f3e6">2 pontos de hidratação</text>
+    <text x="952" y="56" text-anchor="end" fill="#fff" font-family="Anton,Impact,sans-serif" font-size="32" font-style="italic">6,4 KM</text>
+    <text x="952" y="76" text-anchor="end" fill="#c9b8f5" font-size="10" letter-spacing="1.4">IDA E VOLTA</text>
+  </g>
+  
+  <g transform="translate(940,438)">
+    <circle r="20" fill="#fff" fill-opacity=".06" stroke="#fff" stroke-opacity=".18"/>
+    <path d="M0 -14 L5 4 L0 0 L-5 4 Z" fill="#ffd24a"/>
+    <path d="M0 14 L5 -4 L0 0 L-5 -4 Z" fill="#fff" fill-opacity=".35"/>
+    <text x="0" y="-22" text-anchor="middle" fill="#fff" fill-opacity=".55" font-family="Montserrat,Arial,sans-serif" font-size="10" font-weight="800">N</text>
+  </g>
+
+  <text x="880" y="486" text-anchor="end" fill="#fff" fill-opacity=".28"
+        font-family="Montserrat,Arial,sans-serif" font-size="10.5">Traçado ilustrativo</text>
+</svg>
