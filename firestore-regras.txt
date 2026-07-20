@@ -45,9 +45,6 @@ service cloud.firestore {
              && textoAte('cpf', 30)
              && textoAte('docTipo', 10)
              && textoAte('cidade', 80)
-             && textoAte('equipe', 80)
-             && textoAte('emergNome', 120)
-             && textoAte('emergTel', 30)
              && textoAte('status', 20)
              && textoAte('camiseta', 6)
              && textoAte('protocolo', 30)
@@ -68,9 +65,18 @@ service cloud.firestore {
       // Confirmar pagamento, entregar kit, cancelar.
       allow update: if noPrazo() && camposDeInscricao();
 
-      // NINGUÉM apaga inscrição — nem por engano, nem de propósito.
-      // Cancelar no painel só muda o status; o registro fica.
-      allow delete: if false;
+      // Liberado por causa do botão "Apagar tudo e recomeçar" da aba
+      // Auditoria, usado para limpar os testes antes da entrega.
+      //
+      // ATENÇÃO: como o site não tem login, isto vale para qualquer
+      // visitante, não só para o organizador. O botão pede senha, mas
+      // a senha é conferida no navegador — não aqui. Quem souber mexer
+      // consegue apagar as inscrições.
+      //
+      // Depois de zerar e abrir as inscrições de verdade, o mais seguro
+      // é voltar esta linha para "if false" e publicar de novo. Aí nem
+      // por engano nem de propósito alguém apaga o que já foi vendido.
+      allow delete: if noPrazo();
     }
 
     // ---------------- CONFIGURAÇÕES (preços, lotes, estoque) ----------------
@@ -92,8 +98,8 @@ service cloud.firestore {
       allow create: if noPrazo()
                     && request.resource.data.keys().size() <= 4
                     && textoAte('tipo', 40);
-      // histórico não se reescreve
-      allow update, delete: if false;
+      allow update: if false;              // histórico não se reescreve
+      allow delete: if noPrazo();          // mas o botão de zerar limpa
     }
 
     // ---------------- TUDO O MAIS: fechado ----------------
