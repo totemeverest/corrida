@@ -751,6 +751,19 @@ footer .fmeta{margin-top:10px}
   font-size:11px;font-weight:700;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25)}
 @media(max-width:640px){ .percurso-lupa{display:none} }
 
+/* ---- backup (auditoria) ---- */
+.bkp-sec{border-color:rgba(37,211,102,.35);background:rgba(37,211,102,.05)}
+.bkp-sec h3{color:var(--ok)}
+.bkp-txt{font-size:13px;color:var(--muted);line-height:1.6}
+.bkp-txt b{color:var(--txt)}
+.bkp-btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.bkp-btns .btn{flex:1 1 200px;justify-content:center}
+.bkp-rest{margin-top:16px;border-top:1px dashed var(--line);padding-top:14px}
+.bkp-rest summary{cursor:pointer;font-size:13px;font-weight:800;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.4px}
+.bkp-rest summary:hover{color:var(--txt)}
+.bkp-status{margin-top:12px;font-size:13px;font-weight:700;line-height:1.5}
+
 /* ---- zona de perigo (auditoria) ---- */
 .zona-perigo{margin-top:22px;background:rgba(255,84,112,.07);border:1px solid rgba(255,84,112,.42);
   border-radius:16px;padding:20px}
@@ -2641,14 +2654,154 @@ async function renderAuditoria(){
       <button class="btn btn-ghost" onclick="renderAuditoria()">Atualizar</button>
     </div>
 
+    <div class="cfg-sec bkp-sec">
+      <h3>Backup</h3>
+      <p class="bkp-txt">Baixe uma cópia de tudo para o computador. Faça isso <b>toda semana</b> —
+         e sempre antes de mexer em qualquer coisa. O arquivo fica salvo na pasta Downloads
+         com a data e a hora no nome, então um não substitui o outro.</p>
+      <div class="bkp-btns">
+        <button class="btn btn-cta" onclick="baixarBackup()"><span>Baixar backup completo</span></button>
+        <button class="btn btn-ghost" onclick="baixarPlanilha()">Baixar planilha (Excel)</button>
+      </div>
+      <p class="bkp-txt" style="margin-top:14px">
+        <b>Backup completo</b> serve para restaurar o site se algo for apagado.
+        <b>Planilha</b> é para conferir e imprimir a lista de inscritos.</p>
+
+      <details class="bkp-rest">
+        <summary>Restaurar um backup</summary>
+        <p class="bkp-txt" style="margin-top:12px">Escolha um arquivo de backup completo.
+           As inscrições que já existirem não são duplicadas — só volta o que estiver faltando.</p>
+        <input type="file" id="bkpArquivo" accept=".json,application/json" style="display:none" onchange="restaurarBackup(this)">
+        <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="el('bkpArquivo').click()">Escolher arquivo de backup</button>
+        <div id="bkpStatus"></div>
+      </details>
+    </div>
+
     <div class="zona-perigo">
       <h3>Zerar para começar do zero</h3>
       <p>Apaga <b>todas as inscrições</b>, devolve o <b>estoque de camisetas</b> ao valor original,
          zera o <b>caixa</b> e limpa esta <b>auditoria</b>.</p>
       <p class="zp-ok">Preços, lotes, links de pagamento, kit e chave PIX <b>não são alterados</b>.</p>
       <p class="zp-alerta">Isto não tem volta. Use só antes de abrir as inscrições para valer.</p>
+      <p class="bkp-txt">Antes de apagar, o site baixa sozinho um backup do que está no ar —
+         se você clicar aqui por engano, dá para restaurar pelo bloco de Backup acima.</p>
       <button class="btn-perigo" onclick="zerarTudo()">Apagar tudo e recomeçar</button>
     </div>`;
+}
+
+/* ═══════════════ BACKUP E RESTAURAÇÃO ═══════════════
+   O site não tem login, então quem tiver o endereço consegue apagar.
+   O backup é a rede de proteção: com ele nada se perde de verdade. */
+
+function baixarArquivo(nome, conteudo, tipo){
+  const blob=new Blob([conteudo],{type:tipo+';charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=nome;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+function carimboArquivo(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}h${p(d.getMinutes())}`;
+}
+
+async function baixarBackup(){
+  try{
+    const [inscricoes, eventos] = await Promise.all([ DB.list(), DB.listEventos() ]);
+    const pacote = {
+      formato:'backup-corrida-everest',
+      versao:1,
+      evento:CONFIG.evento.nome,
+      geradoEm:new Date().toISOString(),
+      geradoEmBR:new Date().toLocaleString('pt-BR'),
+      totais:{
+        inscricoes:inscricoes.length,
+        confirmadas:inscricoes.filter(i=>i.status==='confirmado').length,
+        pendentes:inscricoes.filter(i=>i.status==='pendente').length,
+        canceladas:inscricoes.filter(i=>i.status==='cancelado').length,
+        recebido:inscricoes.filter(i=>i.status==='confirmado').reduce((s,i)=>s+(Number(i.valor)||0),0)
+      },
+      ajustes:ST,          // preços, lotes, links, estoque, kit
+      inscricoes,
+      eventos
+    };
+    baixarBackup._ultimo = pacote.totais.inscricoes;
+    baixarArquivo(`backup-corrida-everest_${carimboArquivo()}.json`,
+                  JSON.stringify(pacote,null,2), 'application/json');
+    toast(`Backup baixado — ${pacote.totais.inscricoes} inscrições ✓`);
+  }catch(e){ console.error(e); toast('Não consegui gerar o backup. Veja o console (F12).'); }
+}
+
+/* Excel abre CSV com ; e precisa do BOM para os acentos.
+   O apóstrofo na frente evita que o Excel trate um texto como fórmula. */
+function celulaCSV(v){
+  let s = v==null ? '' : String(v);
+  if(/^[=+\-@]/.test(s)) s="'"+s;
+  return '"'+s.replace(/"/g,'""')+'"';
+}
+async function baixarPlanilha(){
+  try{
+    const lista=await DB.list();
+    const cab=['Protocolo','Inscrito em','Nome','Tipo doc','Documento','Nascimento','Gênero',
+               'Celular','E-mail','Cidade','Camiseta','Distância','Forma de pagamento','Valor',
+               'Status','Confirmado em','Kit retirado','Retirado em','Origem','Aceita WhatsApp',
+               'Desconto','Motivo do desconto'];
+    const linhas=lista.map(i=>[
+      i.protocolo, dataBR(i.criadoEm), i.nome, i.docTipo, docDe(i), i.nascimento, i.genero,
+      i.celular, i.email, i.cidade, i.camiseta, i.distancia, i.pagamento,
+      (Number(i.valor)||0).toFixed(2).replace('.',','),
+      i.status, i.confirmadoEm?dataBR(i.confirmadoEm):'', i.kitRetirado?'sim':'não',
+      i.kitRetiradoEm?dataBR(i.kitRetiradoEm):'', i.origem==='balcao'?'balcão':'site',
+      i.aceitaWpp===false?'não':'sim',
+      i.desconto?(Number(i.desconto)||0).toFixed(2).replace('.',','):'', i.motivoDesconto||''
+    ].map(celulaCSV).join(';'));
+    baixarArquivo(`inscritos-corrida-everest_${carimboArquivo()}.csv`,
+                  '﻿'+[cab.map(celulaCSV).join(';'), ...linhas].join('\r\n'), 'text/csv');
+    toast(`Planilha baixada — ${lista.length} inscrições ✓`);
+  }catch(e){ console.error(e); toast('Não consegui gerar a planilha.'); }
+}
+
+async function restaurarBackup(input){
+  const arq=input.files && input.files[0];
+  input.value='';                       // permite escolher o mesmo arquivo de novo
+  if(!arq) return;
+  const status=el('bkpStatus');
+  const aviso=(txt,cor)=>{ status.innerHTML=`<div class="bkp-status" style="color:${cor||'var(--muted)'}">${esc(txt)}</div>`; };
+
+  let dados;
+  try{ dados=JSON.parse(await arq.text()); }
+  catch(e){ aviso('Arquivo inválido — não parece um backup.','var(--err)'); return; }
+
+  if(!dados || dados.formato!=='backup-corrida-everest' || !Array.isArray(dados.inscricoes)){
+    aviso('Este arquivo não é um backup da corrida.','var(--err)'); return;
+  }
+
+  const atuais = await DB.list();
+  const jaTem = new Set(atuais.map(i=>i.protocolo).filter(Boolean));
+  const faltando = dados.inscricoes.filter(i=>i.protocolo && !jaTem.has(i.protocolo));
+
+  if(!faltando.length){
+    aviso(`Nada a restaurar: as ${dados.inscricoes.length} inscrições do backup já estão no site.`,'var(--ok)');
+    return;
+  }
+  if(!confirm(
+      'RESTAURAR BACKUP\n\n'+
+      'Backup de: '+(dados.geradoEmBR||'data desconhecida')+'\n'+
+      'Inscrições no arquivo: '+dados.inscricoes.length+'\n'+
+      'Já existem no site: '+(dados.inscricoes.length-faltando.length)+'\n\n'+
+      'Vão ser recriadas: '+faltando.length+'\n\n'+
+      'Continuar?')) return;
+
+  aviso('Restaurando '+faltando.length+' inscrições...');
+  let ok=0, erro=0;
+  for(const i of faltando){
+    const copia={...i}; delete copia._id;
+    try{ await DB.add(copia); ok++; }catch(e){ console.error(e); erro++; }
+  }
+  await carregarAdmin(); await renderAuditoria();
+  aviso(`Restauradas ${ok} inscrições.`+(erro?` ${erro} falharam — veja o console (F12).`:''), erro?'var(--alerta)':'var(--ok)');
+  toast(erro?`Restaurado com ${erro} falha(s)`:`Backup restaurado ✓`);
 }
 
 /* ═══════════════ ZERAR PARA ENTREGA ═══════════════
@@ -2667,14 +2820,18 @@ async function zerarTudo(){
   if(!confirm('Última confirmação.\n\nApagar tudo agora?')) return;
 
   const btn=document.querySelector('.btn-perigo');
-  if(btn){ btn.disabled=true; btn.textContent='Apagando...'; }
+  if(btn){ btn.disabled=true; btn.textContent='Salvando backup...'; }
   try{
+    // Rede de segurança: baixa o backup ANTES de apagar. Se alguém
+    // clicar aqui por engano com inscrições reais, dá pra restaurar.
+    await baixarBackup();
+    if(btn) btn.textContent='Apagando...';
     await DB.zerar();
     ST = seedSettings();          // estoque, kit e seleção de lote voltam ao CONFIG
     await DB.saveSettings(ST);
     admCache=[]; admLimite=20; balUltima=null;
     renderAdmin(); renderPagina(); renderBalcao(); await renderAuditoria();
-    toast('Pronto: site zerado e pronto para as inscrições reais ✓');
+    toast('Site zerado ✓ — o backup do que foi apagado está na sua pasta Downloads');
   }catch(e){
     console.error(e);
     toast('Não consegui apagar tudo. Veja o console (F12).');

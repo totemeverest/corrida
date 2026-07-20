@@ -14,13 +14,6 @@ service cloud.firestore {
     // Estas regras não separam admin de visitante — elas limitam
     // o ESTRAGO que alguém pode causar.
 
-    // Trava de validade: depois desta data o banco fecha sozinho.
-    // A corrida é 20/09/2026; deixei folga até 15/10/2026.
-    // Para estender, mude a data aqui e publique de novo.
-    function noPrazo() {
-      return request.time < timestamp.date(2026, 10, 15);
-    }
-
     // Limita o tamanho de um campo de texto, se ele existir.
     function textoAte(campo, max) {
       return !(campo in request.resource.data)
@@ -30,7 +23,7 @@ service cloud.firestore {
     }
 
     // Barra documento gigante (alguém tentando entupir o banco).
-    // O site grava 23 campos pelo formulário e 29 pelo balcão;
+    // O site grava 20 campos pelo formulário e 26 pelo balcão;
     // 40 dá folga sem abrir a porteira.
     function tamanhoSensato() {
       return request.resource.data.keys().size() <= 40;
@@ -57,26 +50,25 @@ service cloud.firestore {
     // ---------------- INSCRIÇÕES ----------------
     match /inscricoes/{id} {
 
-      allow read: if noPrazo();
+      allow read: if true;
 
       // Qualquer visitante pode se inscrever.
-      allow create: if noPrazo() && camposDeInscricao();
+      allow create: if camposDeInscricao();
 
       // Confirmar pagamento, entregar kit, cancelar.
-      allow update: if noPrazo() && camposDeInscricao();
+      allow update: if camposDeInscricao();
 
       // Liberado por causa do botão "Apagar tudo e recomeçar" da aba
       // Auditoria, usado para limpar os testes antes da entrega.
       //
       // ATENÇÃO: como o site não tem login, isto vale para qualquer
       // visitante, não só para o organizador. O botão pede senha, mas
-      // a senha é conferida no navegador — não aqui. Quem souber mexer
-      // consegue apagar as inscrições.
+      // a senha é conferida no navegador — não aqui.
       //
-      // Depois de zerar e abrir as inscrições de verdade, o mais seguro
-      // é voltar esta linha para "if false" e publicar de novo. Aí nem
-      // por engano nem de propósito alguém apaga o que já foi vendido.
-      allow delete: if noPrazo();
+      // DEPOIS DE ZERAR E ABRIR AS INSCRIÇÕES DE VERDADE:
+      // troque a linha abaixo para  allow delete: if false;  e publique
+      // de novo. Aí ninguém apaga o que já foi vendido, nem por engano.
+      allow delete: if true;
     }
 
     // ---------------- CONFIGURAÇÕES (preços, lotes, estoque) ----------------
@@ -87,19 +79,17 @@ service cloud.firestore {
 
       // Só aceita se continuar tendo cara de settings válido —
       // evita que uma escrita torta derrube a página inteira.
-      allow write: if noPrazo()
-                   && request.resource.data.keys().hasAll(['versao','camiseta','lotes'])
+      allow write: if request.resource.data.keys().hasAll(['versao','camiseta','lotes'])
                    && request.resource.data.keys().size() <= 20;
     }
 
     // ---------------- AUDITORIA (contadores de uso) ----------------
     match /eventos/{id} {
-      allow read:   if noPrazo();
-      allow create: if noPrazo()
-                    && request.resource.data.keys().size() <= 4
+      allow read:   if true;
+      allow create: if request.resource.data.keys().size() <= 4
                     && textoAte('tipo', 40);
-      allow update: if false;              // histórico não se reescreve
-      allow delete: if noPrazo();          // mas o botão de zerar limpa
+      allow update: if false;   // histórico não se reescreve
+      allow delete: if true;    // mas o botão de zerar limpa
     }
 
     // ---------------- TUDO O MAIS: fechado ----------------
