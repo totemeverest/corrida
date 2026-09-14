@@ -325,24 +325,33 @@ footer .fmeta{margin-top:10px}
 .gphoto.ph span{color:var(--muted);font-weight:700;font-size:13px;opacity:.6}
 #galTitulo{font-size:clamp(26px,5vw,44px);color:#fff}
 #galeria .sec-head p{color:var(--muted)}
-/* ---- vitrine de cupons ---- */
-.vitrine{margin-top:26px}
-.vitrine-tit{font-style:italic;text-transform:uppercase;font-weight:900;font-size:15px;letter-spacing:.5px;color:var(--amarelo);text-align:center}
-.vitrine-sub{color:var(--muted);font-size:13px;text-align:center;margin:5px 0 16px}
-.vit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px;max-width:760px;margin:0 auto}
-.vit-card{position:relative;background:linear-gradient(160deg,rgba(147,111,245,.16),rgba(255,255,255,.04));
-  border:1px solid var(--line);border-radius:16px;padding:18px 16px 16px;text-align:center;overflow:hidden}
-.vit-card.acabando{border-color:rgba(255,190,60,.55)}
-.vit-off{font-size:30px;font-weight:900;font-style:italic;line-height:1;color:#fff}
-.vit-off small{font-size:14px;margin-left:2px}
-.vit-cod{display:inline-block;margin-top:9px;font-family:'Montserrat';font-weight:800;font-size:13.5px;letter-spacing:1.5px;
-  background:rgba(0,0,0,.28);border:1px dashed rgba(255,255,255,.28);border-radius:8px;padding:6px 12px;color:#fff}
-.vit-restam{display:block;margin-top:9px;font-size:12.5px;color:var(--muted)}
+/* ---- vitrine de cupons: compacta, dentro do hero ----
+   O CTA continua sendo o elemento dominante; isto é um apoio abaixo dele. */
+.vitrine{margin-top:20px}
+.vitrine-tit{font-style:italic;text-transform:uppercase;font-weight:900;font-size:11.5px;letter-spacing:1.2px;color:var(--amarelo);text-align:center}
+.vitrine-sub{color:var(--muted);font-size:11.5px;text-align:center;margin:3px 0 11px}
+.vit-grid{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.vit-card{flex:0 0 auto;width:138px;background:linear-gradient(160deg,rgba(147,111,245,.18),rgba(255,255,255,.05));
+  border:1px solid var(--line);border-radius:13px;padding:11px 10px 10px;text-align:center}
+.vit-card.acabando{border-color:rgba(255,190,60,.6)}
+.vit-off{font-size:19px;font-weight:900;font-style:italic;line-height:1;color:#fff}
+.vit-off small{font-size:10.5px;margin-left:1px}
+.vit-cod{display:block;margin-top:6px;font-family:'Montserrat';font-weight:800;font-size:11px;letter-spacing:.9px;
+  background:rgba(0,0,0,.3);border:1px dashed rgba(255,255,255,.26);border-radius:6px;padding:4px 5px;color:#fff;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vit-restam{display:block;margin-top:5px;font-size:10.5px;color:var(--muted)}
 .vit-card.acabando .vit-restam{color:var(--amarelo);font-weight:800}
-.vit-btn{display:block;width:100%;margin-top:13px;background:var(--amarelo);color:#2a1450;border:none;border-radius:10px;
-  padding:12px;font-weight:900;font-style:italic;text-transform:uppercase;font-size:13px;cursor:pointer;transition:.18s}
+.vit-btn{display:block;width:100%;margin-top:8px;background:var(--amarelo);color:#2a1450;border:none;border-radius:7px;
+  padding:7px 4px;font-weight:900;font-style:italic;text-transform:uppercase;font-size:10.5px;cursor:pointer;transition:.18s}
 .vit-btn:hover{transform:translateY(-1px);filter:brightness(1.06)}
-@media(max-width:520px){ .vit-grid{grid-template-columns:1fr} .vit-off{font-size:26px} }
+@media(max-width:560px){
+  /* rolagem lateral em vez de crescer a altura do hero */
+  .vit-grid{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;padding:2px 2px 6px;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+  .vit-grid::-webkit-scrollbar{height:3px}
+  .vit-grid::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:3px}
+  .vit-card{width:124px;scroll-snap-align:start}
+}
 /* ---- cupons disponíveis no balcão ---- */
 .bal-cup{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
   border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px}
@@ -902,6 +911,7 @@ footer .fmeta{margin-top:10px}
     <button class="btn btn-cta btn-pulso" onclick="abrirInscricao()"><span>Quero me inscrever</span></button>
   </div>
   <div class="lote-tag" id="loteTag"></div>
+  <div class="vitrine" id="vitrineCupons" style="display:none"></div>
   <p class="ja-inscrito">Já se inscreveu?
     <a href="#" onclick="abrirConsulta();return false">Consultar minha inscrição</a></p>
 </div>
@@ -928,7 +938,6 @@ footer .fmeta{margin-top:10px}
     <div class="dist-grid" id="distGrid"></div>
     <div class="lotes-strip" id="lotesStrip"></div>
     <p class="lotes-nota" id="lotesNota"></p>
-    <div class="vitrine" id="vitrineCupons" style="display:none"></div>
   </div>
 </section>
 <div class="divider"></div>
@@ -1543,7 +1552,9 @@ const DB = {
         p.formasPermitidas=f;
       }
       if(Array.isArray(campos.lotesPermitidos)){
-        p.lotesPermitidos=campos.lotesPermitidos.map(Number).filter(n=>n>=0&&n<10);
+        const L=campos.lotesPermitidos.map(Number).filter(n=>n>=0&&n<10);
+        if(!L.length) throw erroCupom('Marque pelo menos um lote em que o cupom vale.');
+        p.lotesPermitidos=L;
       }
       if(!Object.keys(p).length) throw erroCupom('Nada foi alterado.');
       return p;
@@ -1777,11 +1788,14 @@ function cupomFormatoOk(c){ return /^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(c); }
 /* COMPATIBILIDADE com cupons criados antes destes campos (ex.: TESTE60):
    - `mostrarNoSite` ausente  →  false  (vitrine é opt-in; nada aparece sem o
      organizador marcar, então nenhum cupom antigo vira propaganda sozinho)
-   - `lotesPermitidos` ausente ou vazio  →  TODOS os lotes  (preserva
-     exatamente o comportamento de hoje; um cupom antigo continua valendo) */
+   - `lotesPermitidos` ausente ou vazio  →  cupom NÃO vale em lote nenhum.
+     "Ausente" nunca significa "todos": um cupom sem lote definido é tratado
+     como INCOMPLETO e recusado na aplicação, e o painel sinaliza para o
+     organizador editar. Nenhum documento é migrado em silêncio. */
 const cupomNaVitrine = cup => !!(cup && cup.mostrarNoSite === true);
-const cupomLotes = cup => (Array.isArray(cup && cup.lotesPermitidos) && cup.lotesPermitidos.length)
-                          ? cup.lotesPermitidos.map(Number) : null;   // null = todos
+const cupomLotes = cup => Array.isArray(cup && cup.lotesPermitidos) ? cup.lotesPermitidos.map(Number) : [];
+const cupomSemLote = cup => cupomLotes(cup).length === 0;
+const cupomValeNoLote = (cup, idx) => cupomLotes(cup).indexOf(Number(idx)) > -1;
 const loteAtualIdx = () => Math.min(Number((ST&&ST.loteAtivo)||0), Math.max(0,((ST&&ST.lotes)||[]).length-1));
 const restamDoCupom = cup => Math.max(0, Number(cup&&cup.limite||0) - Number(cup&&cup.usados||0));
 
@@ -1798,8 +1812,9 @@ function avaliarCupom(cup, codigo, brutoCent, forma, loteIdx){
   if(cup.ativo===false) return nao('Este cupom está desativado.');
   if(cup.validade && Date.now() > Number(cup.validade)) return nao('Este cupom venceu.');
   if(loteIdx !== null && loteIdx !== undefined){
-    const lotes = cupomLotes(cup);
-    if(lotes && lotes.indexOf(Number(loteIdx)) === -1)
+    if(cupomSemLote(cup))
+      return nao('Este cupom ainda não tem lote definido. Abra o painel, edite o cupom e marque em quais lotes ele vale.');
+    if(!cupomValeNoLote(cup, loteIdx))
       return nao('Este cupom não vale para o lote que está em vigor agora.');
   }
   const permitidas = (Array.isArray(cup.formasPermitidas) && cup.formasPermitidas.length)
@@ -2301,8 +2316,7 @@ async function renderVitrine(){
     if(c.validade && agora>Number(c.validade)) return false;
     if(!(Number(c.limite)>=1)) return false;
     if(restamDoCupom(c)<=0) return false;
-    const lotes=cupomLotes(c);
-    if(lotes && lotes.indexOf(lote)===-1) return false;
+    if(!cupomValeNoLote(c, lote)) return false;   // sem lote explícito, não aparece
     return true;
   }).sort((a,b)=>Number(b.valor)-Number(a.valor));
   vitCache=visiveis;
@@ -2740,6 +2754,7 @@ function renderAdmin(){
       <a class="ic-wa" href="${waLink(i.celular)}" target="_blank" rel="noopener">${esc(i.celular)||'—'} · abrir conversa ↗</a>
       ${botaoSituacao(i)}
       <div class="ic-acoes">${acoes(i)}</div>
+      ${i.status==='pendente'?`<div id="cupCard_${i._id}" style="display:none"><div id="cupBoxC_${i._id}"></div></div>`:''}
     </div>`;
   }).join("");
 
@@ -2945,14 +2960,26 @@ async function salvarConfig(){
    Só aparece em inscrição aguardando pagamento. Depois de confirmado o
    pagamento, o valor está fechado e esta área não é oferecida. */
 const cupInscOcupado = new Set();
+/* O painel tem DUAS faces: a tabela (desktop) e os cards (mobile). O CSS
+   esconde uma delas conforme a largura. Antes o painel de cupom só existia
+   dentro da tabela — no celular o clique trocava o display de uma linha que
+   estava dentro de um contêiner `display:none`, e nada aparecia.
+   Esta função devolve a face que está REALMENTE visível agora. */
+function faceCupomInsc(id){
+  const wrap=document.querySelector('.tbl-wrap');
+  const tabelaVisivel = wrap && getComputedStyle(wrap).display !== 'none';
+  return tabelaVisivel
+    ? { alvo:el('cupRow_'+id),  box:el('cupBox_'+id),  display:'table-row' }
+    : { alvo:el('cupCard_'+id), box:el('cupBoxC_'+id), display:'block' };
+}
 function abrirCupomInsc(id){
-  const linha=el('cupRow_'+id); if(!linha) return;
-  const abrindo = linha.style.display==='none';
-  linha.style.display = abrindo ? 'table-row' : 'none';
+  const f=faceCupomInsc(id); if(!f.alvo) return;
+  const abrindo = f.alvo.style.display==='none';
+  f.alvo.style.display = abrindo ? f.display : 'none';
   if(abrindo) renderCupomInsc(id);
 }
 function renderCupomInsc(id, msg, ruim){
-  const box=el('cupBox_'+id); if(!box) return;
+  const box=faceCupomInsc(id).box; if(!box) return;
   const i=admCache.find(x=>x._id===id); if(!i) return;
   const cheio = (i.valorCheio!=null ? Number(i.valorCheio) : Number(i.valor||0));
   const temDescManual = Number(i.desconto||0)>0;
@@ -2977,6 +3004,7 @@ function renderCupomInsc(id, msg, ruim){
         <input id="cupIn_${id}" type="text" maxlength="24" placeholder="Trocar por outro código" autocomplete="off" spellcheck="false">
         <button type="button" class="cupom-btn" onclick="aplicarCupomInsc('${id}')">Trocar</button>
       </div>
+      <div id="cupDisp_${id}"></div>
       <button class="mini no" style="margin-top:10px" onclick="removerCupomInsc('${id}')">Remover cupom</button>`;
   } else {
     corpo = `
@@ -2986,24 +3014,50 @@ function renderCupomInsc(id, msg, ruim){
       <div class="cupom-linha">
         <input id="cupIn_${id}" type="text" maxlength="24" placeholder="Código do cupom" autocomplete="off" spellcheck="false">
         <button type="button" class="cupom-btn" onclick="aplicarCupomInsc('${id}')">Aplicar</button>
-      </div>`;
+      </div>
+      <div id="cupDisp_${id}"></div>`;
   }
   box.innerHTML = `<div style="padding:14px 4px">
     <div style="font-weight:800;font-style:italic;text-transform:uppercase;font-size:13px;color:var(--amarelo);margin-bottom:4px">Desconto / cupom</div>
     <p style="color:var(--muted);font-size:12px;margin:0 0 12px">Disponível somente antes da confirmação do pagamento.</p>
     ${aviso}${corpo}</div>`;
+  if(!ehCartao && !temDescManual) listarCuponsInsc(id, i.pagamento);
 }
-async function aplicarCupomInsc(id){
+/* Mesma lista do balcão, filtrada pelo lote atual e pela forma de pagamento
+   DESTA inscrição — o organizador não precisa saber os códigos de cor. */
+async function listarCuponsInsc(id, forma){
+  const alvo=el('cupDisp_'+id); if(!alvo) return;
+  let lista=[]; try{ lista=await DB.listCupons(); }catch(e){ return; }
+  const lote=loteAtualIdx(), agora=Date.now();
+  const i=admCache.find(x=>x._id===id);
+  const disp=lista.filter(c=>{
+    if(c.ativo===false) return false;
+    if(c.validade && agora>Number(c.validade)) return false;
+    if(!(Number(c.limite)>=1)) return false;
+    if(restamDoCupom(c)<=0) return false;
+    if(!cupomValeNoLote(c, lote)) return false;
+    if(i && c.codigo===i.cupom) return false;            // já é o desta inscrição
+    const perm=(Array.isArray(c.formasPermitidas)&&c.formasPermitidas.length)?c.formasPermitidas:['PIX','Dinheiro'];
+    return perm.indexOf(forma)>-1;
+  }).sort((a,b)=>Number(b.valor)-Number(a.valor));
+  if(!disp.length){ alvo.innerHTML=`<p class="bal-desc-nota" style="margin-top:10px">Nenhum cupom disponível para ${esc(forma)} no lote de agora.</p>`; return; }
+  alvo.innerHTML=`<div style="margin-top:12px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;color:var(--muted);letter-spacing:.5px">Cupons disponíveis</div>
+    ${disp.map(c=>`<div class="bal-cup">
+      <div><b>${esc(c.codigo)} — ${Number(c.valor)}%</b><small>${restamDoCupom(c)} ${restamDoCupom(c)===1?'restante':'restantes'}</small></div>
+      <button class="mini ok" onclick="aplicarCupomInsc('${id}','${esc(c.codigo)}')">Aplicar</button>
+    </div>`).join('')}</div>`;
+}
+async function aplicarCupomInsc(id, codigoDireto){
   if(cupInscOcupado.has(id)){ toast('Espere — esta inscrição ainda está sendo salva'); return; }
-  const campo=el('cupIn_'+id); if(!campo) return;
-  const cod=normCupom(campo.value);
+  const campo=el('cupIn_'+id);
+  const cod=normCupom(codigoDireto || (campo?campo.value:''));
   if(!cod){ renderCupomInsc(id,'Digite o código do cupom.',true); return; }
   cupInscOcupado.add(id);
   try{
     const r=await comPrazo(DB.aplicarCupomNaInscricao(id,cod),15000);
     const i=admCache.find(x=>x._id===id); if(i) Object.assign(i,r.patch);
     renderAdmin(); renderPagina();
-    const linha=el('cupRow_'+id); if(linha) linha.style.display='table-row';
+    const f=faceCupomInsc(id); if(f.alvo) f.alvo.style.display=f.display;
     renderCupomInsc(id, r.trocouDe ? `Trocado de <b>${esc(r.trocouDe)}</b> para <b>${esc(cod)}</b>.` : `Cupom <b>${esc(cod)}</b> aplicado.`, false);
     toast('Cupom aplicado ✓');
   }catch(e){
@@ -3026,7 +3080,7 @@ async function removerCupomInsc(id){
     const r=await comPrazo(DB.removerCupomDaInscricao(id),15000);
     Object.assign(i,r.patch);
     renderAdmin(); renderPagina();
-    const linha=el('cupRow_'+id); if(linha) linha.style.display='table-row';
+    const f=faceCupomInsc(id); if(f.alvo) f.alvo.style.display=f.display;
     renderCupomInsc(id, `Cupom <b>${esc(r.codigo)}</b> removido — valor de volta ao original.`, false);
     toast('Cupom removido ✓');
   }catch(e){
@@ -3067,10 +3121,13 @@ async function renderCupons(){
                  : venceu ? '<span style="color:var(--alerta)">vencido</span>'
                  : (!limiteOk) ? '<span style="color:var(--alerta)">limite inválido</span>'
                  : (usados>=limite) ? '<span style="color:var(--alerta)">esgotado</span>'
+                 : cupomSemLote(c) ? '<span style="color:var(--alerta)">precisa definir o lote</span>'
                  : '<span style="color:var(--ok)">ativo</span>';
     const formas=(Array.isArray(c.formasPermitidas)&&c.formasPermitidas.length)?c.formasPermitidas:['PIX','Dinheiro'];
-    const lotes=cupomLotes(c);
-    const txtLotes = lotes ? lotes.map(i=>((ST.lotes||[])[i]||{}).nome||('lote '+(i+1))).join(', ') : 'todos os lotes';
+    const semLote=cupomSemLote(c);
+    const txtLotes = semLote
+      ? '<span style="color:var(--alerta)">nenhum lote definido — este cupom não funciona até você editar</span>'
+      : esc(cupomLotes(c).map(i=>((ST.lotes||[])[i]||{}).nome||('lote '+(i+1))).join(', '));
     return `<div class="cfg-row" style="grid-template-columns:1fr">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div><b style="font-size:16px">${esc(c.codigo)}</b> · ${Number(c.valor)||0}% · ${estado}
@@ -3086,7 +3143,7 @@ async function renderCupons(){
         ${c.validade?` · vale até ${dataBR(Number(c.validade))}`:''}
       </div>
       <div style="color:var(--muted);font-size:12.5px;margin-top:3px">
-        Vale em: <b style="color:#fff">${esc(txtLotes)}</b> · pagamento: <b style="color:#fff">${esc(formas.join(' e '))}</b>
+        Vale em: <b style="color:#fff">${txtLotes}</b> · pagamento: <b style="color:#fff">${esc(formas.join(' e '))}</b>
       </div>
       <div style="color:var(--muted);font-size:12.5px;margin-top:3px">
         Inscrições: ${u.total} (${u.conf} confirmadas · ${u.pend} aguardando · ${u.canc} canceladas) · desconto dado ${BRL(u.desc)}
@@ -3105,7 +3162,7 @@ async function renderCupons(){
       </div>
       <div style="margin-top:12px">
         <label class="checkrow"><input type="checkbox" id="cupNovoSite"><span>Mostrar este cupom na vitrine do site</span></label>
-        <div style="color:var(--muted);font-size:12.5px;margin:10px 0 6px">Vale em quais lotes? (nenhum marcado = todos)</div>
+        <div style="color:var(--muted);font-size:12.5px;margin:10px 0 6px">Vale em quais lotes? <b style="color:var(--amarelo)">Marque pelo menos um</b></div>
         <div style="display:flex;gap:14px;flex-wrap:wrap">
           ${(ST.lotes||[]).map((l,i)=>`<label class="checkrow" style="margin:0"><input type="checkbox" id="cupNovoLote_${i}"><span>${esc(l.nome)}</span></label>`).join('')}
         </div>
@@ -3131,8 +3188,9 @@ async function criarCupom(){
   let validade=null;
   if(dataTxt){ const d=new Date(dataTxt+'T23:59:59'); if(!isNaN(d)) validade=d.getTime(); }
   try{
-    if(await DB.getCupom(cod)) return mostrar('Já existe um cupom com o código '+cod+'.');
     const lotesSel=[]; (ST.lotes||[]).forEach((l,i)=>{ const b=el('cupNovoLote_'+i); if(b&&b.checked) lotesSel.push(i); });
+    if(!lotesSel.length) return mostrar('Marque em quais lotes este cupom vale — pelo menos um.');
+    if(await DB.getCupom(cod)) return mostrar('Já existe um cupom com o código '+cod+'.');
     await DB.salvarCupom(cod, { ativo:true, tipo:'percentual', valor:pct, limite:lim,
       usados:0, validade, formasPermitidas:['PIX','Dinheiro'], criadoEm:Date.now(),
       mostrarNoSite: !!(el('cupNovoSite')&&el('cupNovoSite').checked),
@@ -3151,9 +3209,11 @@ function abrirEdicaoCupom(cod){
   const usados=Number(c.usados||0);
   const lotes=cupomLotes(c);
   const dt = c.validade ? new Date(Number(c.validade)) : null;
+  const aviso = cupomSemLote(c) ? `<div class="cupom-msg ruim" style="margin-bottom:10px">Este cupom foi criado antes da regra de lotes e <b>não vale em lote nenhum</b> até você marcar abaixo.</div>` : '';
   const dtTxt = dt && !isNaN(dt) ? dt.toISOString().slice(0,10) : '';
   box.style.display='block';
   box.innerHTML=`<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:14px">
+    ${aviso}
     <div class="form-grid">
       <div class="field"><label>Percentual (%) — só pode diminuir</label>
         <input id="ed_pct_${cod}" type="number" min="1" max="${Number(c.valor)}" step="1" value="${Number(c.valor)}"></div>
@@ -3168,9 +3228,9 @@ function abrirEdicaoCupom(cod){
       <label class="checkrow" style="margin:0"><input type="checkbox" id="ed_site_${cod}" ${cupomNaVitrine(c)?'checked':''}><span>Mostrar na vitrine</span></label>
       <label class="checkrow" style="margin:0"><input type="checkbox" id="ed_ativo_${cod}" ${c.ativo===false?'':'checked'}><span>Ativo</span></label>
     </div>
-    <div style="color:var(--muted);font-size:12.5px;margin:12px 0 6px">Vale em quais lotes? (nenhum marcado = todos)</div>
+    <div style="color:var(--muted);font-size:12.5px;margin:12px 0 6px">Vale em quais lotes? <b style="color:var(--amarelo)">Marque pelo menos um</b></div>
     <div style="display:flex;gap:14px;flex-wrap:wrap">
-      ${(ST.lotes||[]).map((l,i)=>`<label class="checkrow" style="margin:0"><input type="checkbox" id="ed_lote_${cod}_${i}" ${(lotes&&lotes.indexOf(i)>-1)?'checked':''}><span>${esc(l.nome)}</span></label>`).join('')}
+      ${(ST.lotes||[]).map((l,i)=>`<label class="checkrow" style="margin:0"><input type="checkbox" id="ed_lote_${cod}_${i}" ${(lotes.indexOf(i)>-1)?'checked':''}><span>${esc(l.nome)}</span></label>`).join('')}
     </div>
     <div class="cupom-msg" id="ed_msg_${cod}" style="margin-top:10px"></div>
     <button class="btn btn-cta" style="width:100%;padding:13px;margin-top:10px" onclick="salvarEdicaoCupom('${cod}')"><span>Salvar alterações</span></button>
@@ -3183,6 +3243,7 @@ async function salvarEdicaoCupom(cod){
   const formas=[]; if(el('ed_pix_'+cod).checked)formas.push('PIX'); if(el('ed_din_'+cod).checked)formas.push('Dinheiro');
   if(!formas.length) return mostrar('Escolha pelo menos uma forma de pagamento.');
   const lotesSel=[]; (ST.lotes||[]).forEach((l,i)=>{ const b=el('ed_lote_'+cod+'_'+i); if(b&&b.checked) lotesSel.push(i); });
+  if(!lotesSel.length) return mostrar('Marque em quais lotes este cupom vale — pelo menos um.');
   const dTxt=el('ed_val_'+cod).value;
   let validade=null; if(dTxt){ const d=new Date(dTxt+'T23:59:59'); if(!isNaN(d)) validade=d.getTime(); }
   try{
@@ -3423,7 +3484,7 @@ async function renderCuponsBalcao(){
     if(c.validade && agora>Number(c.validade)) return false;
     if(!(Number(c.limite)>=1)) return false;
     if(restamDoCupom(c)<=0) return false;
-    const lotes=cupomLotes(c); if(lotes && lotes.indexOf(lote)===-1) return false;
+    if(!cupomValeNoLote(c, lote)) return false;   // sem lote explícito, não aparece
     const perm=(Array.isArray(c.formasPermitidas)&&c.formasPermitidas.length)?c.formasPermitidas:['PIX','Dinheiro'];
     return forma==='Cartão' ? false : perm.indexOf(forma)>-1;
   }).sort((a,b)=>Number(b.valor)-Number(a.valor));
