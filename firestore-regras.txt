@@ -114,8 +114,10 @@ service cloud.firestore {
       function mudou() { return d().diff(antes()).affectedKeys(); }
 
       // Documento fora desta forma é recusado na criação.
+      // `mostrarNoSite` e `lotesPermitidos` são opcionais: cupom antigo
+      // (criado antes deles) continua válido sem precisar de migração.
       function formaDeCupom() {
-        return d().keys().hasOnly(['ativo','tipo','valor','limite','usados','validade','formasPermitidas','criadoEm'])
+        return d().keys().hasOnly(['ativo','tipo','valor','limite','usados','validade','formasPermitidas','criadoEm','mostrarNoSite','lotesPermitidos'])
             && d().keys().hasAll(['ativo','tipo','valor','limite','usados','formasPermitidas','criadoEm'])
             && d().ativo is bool
             && d().tipo == 'percentual'
@@ -126,7 +128,33 @@ service cloud.firestore {
             && (!('validade' in d()) || d().validade == null || d().validade is number)
             && d().formasPermitidas is list
             && d().formasPermitidas.size() >= 1
-            && d().formasPermitidas.size() <= 2;
+            && d().formasPermitidas.size() <= 2
+            && (!('mostrarNoSite' in d()) || d().mostrarNoSite is bool)
+            && (!('lotesPermitidos' in d()) || (d().lotesPermitidos is list && d().lotesPermitidos.size() <= 10));
+      }
+
+      // EDIÇÃO PELO PAINEL. Sem login, isto vale para qualquer visitante —
+      // por isso as três travas abaixo estão AQUI, e não só no JavaScript:
+      //   · `usados` e `criadoEm` têm de sair iguais como entraram
+      //   · o percentual só pode DIMINUIR (impede transformar um cupom
+      //     existente em desconto maior)
+      //   · `limite` nunca fica abaixo do que já foi usado
+      // O código do cupom é o ID do documento, então não há como alterá-lo.
+      function edicaoDeCupom() {
+        return mudou().hasOnly(['ativo','valor','limite','validade','formasPermitidas','mostrarNoSite','lotesPermitidos'])
+            && d().usados   == antes().usados
+            && d().criadoEm == antes().criadoEm
+            && d().tipo     == antes().tipo
+            && d().ativo  is bool
+            && d().valor  is number && d().valor  >  0 && d().valor <= antes().valor
+            && d().limite is number && d().limite >= 1 && d().limite <= 2000
+            && d().limite >= antes().usados
+            && (!('validade' in d()) || d().validade == null || d().validade is number)
+            && d().formasPermitidas is list
+            && d().formasPermitidas.size() >= 1
+            && d().formasPermitidas.size() <= 2
+            && (!('mostrarNoSite' in d()) || d().mostrarNoSite is bool)
+            && (!('lotesPermitidos' in d()) || (d().lotesPermitidos is list && d().lotesPermitidos.size() <= 10));
       }
 
       // Consumo e devolução: mexe SÓ no contador, de 1 em 1, e nunca sai da
@@ -140,20 +168,15 @@ service cloud.firestore {
             && (d().usados == antes().usados + 1 || d().usados == antes().usados - 1);
       }
 
-      // Botão Ativar/Desativar do painel: mexe SÓ nesse campo.
-      function ligaDesliga() {
-        return mudou().hasOnly(['ativo']) && d().ativo is bool;
-      }
-
-      // O site precisa ler o cupom para calcular o desconto.
+      // O site precisa ler o cupom para calcular o desconto e montar a vitrine.
       allow read: if true;
 
       // Cupom nasce sempre zerado.
       allow create: if formaDeCupom() && d().usados == 0;
 
-      // Percentual, limite, validade, tipo e criadoEm são IMUTÁVEIS depois
-      // de criados. Só o contador anda, e só de 1 em 1.
-      allow update: if passoDeContador() || ligaDesliga();
+      // Ou o contador anda (±1), ou é uma edição do painel — nunca as duas
+      // coisas na mesma gravação. `usados` só muda pelo primeiro caminho.
+      allow update: if passoDeContador() || edicaoDeCupom();
 
       // Some só o que nunca foi usado: uma inscrição no histórico não pode
       // ficar apontando para um cupom que deixou de existir.

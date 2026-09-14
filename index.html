@@ -325,6 +325,29 @@ footer .fmeta{margin-top:10px}
 .gphoto.ph span{color:var(--muted);font-weight:700;font-size:13px;opacity:.6}
 #galTitulo{font-size:clamp(26px,5vw,44px);color:#fff}
 #galeria .sec-head p{color:var(--muted)}
+/* ---- vitrine de cupons ---- */
+.vitrine{margin-top:26px}
+.vitrine-tit{font-style:italic;text-transform:uppercase;font-weight:900;font-size:15px;letter-spacing:.5px;color:var(--amarelo);text-align:center}
+.vitrine-sub{color:var(--muted);font-size:13px;text-align:center;margin:5px 0 16px}
+.vit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px;max-width:760px;margin:0 auto}
+.vit-card{position:relative;background:linear-gradient(160deg,rgba(147,111,245,.16),rgba(255,255,255,.04));
+  border:1px solid var(--line);border-radius:16px;padding:18px 16px 16px;text-align:center;overflow:hidden}
+.vit-card.acabando{border-color:rgba(255,190,60,.55)}
+.vit-off{font-size:30px;font-weight:900;font-style:italic;line-height:1;color:#fff}
+.vit-off small{font-size:14px;margin-left:2px}
+.vit-cod{display:inline-block;margin-top:9px;font-family:'Montserrat';font-weight:800;font-size:13.5px;letter-spacing:1.5px;
+  background:rgba(0,0,0,.28);border:1px dashed rgba(255,255,255,.28);border-radius:8px;padding:6px 12px;color:#fff}
+.vit-restam{display:block;margin-top:9px;font-size:12.5px;color:var(--muted)}
+.vit-card.acabando .vit-restam{color:var(--amarelo);font-weight:800}
+.vit-btn{display:block;width:100%;margin-top:13px;background:var(--amarelo);color:#2a1450;border:none;border-radius:10px;
+  padding:12px;font-weight:900;font-style:italic;text-transform:uppercase;font-size:13px;cursor:pointer;transition:.18s}
+.vit-btn:hover{transform:translateY(-1px);filter:brightness(1.06)}
+@media(max-width:520px){ .vit-grid{grid-template-columns:1fr} .vit-off{font-size:26px} }
+/* ---- cupons disponíveis no balcão ---- */
+.bal-cup{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px}
+.bal-cup b{color:#fff}
+.bal-cup small{color:var(--muted);font-size:12px;display:block;margin-top:2px}
 .cupom-box{margin-top:14px}
 .cupom-lab{display:block;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:7px}
 .cupom-linha{display:flex;gap:8px}
@@ -905,6 +928,7 @@ footer .fmeta{margin-top:10px}
     <div class="dist-grid" id="distGrid"></div>
     <div class="lotes-strip" id="lotesStrip"></div>
     <p class="lotes-nota" id="lotesNota"></p>
+    <div class="vitrine" id="vitrineCupons" style="display:none"></div>
   </div>
 </section>
 <div class="divider"></div>
@@ -1428,7 +1452,8 @@ const DB = {
                           const dC=await t.get(refC); cup=dC.exists?dC.data():null; }
         /* --- daqui para baixo, só gravações --- */
         if(r.deltaCupom>0){
-          const av=avaliarCupom(cup, r.cupom, 0, r.forma);   // revalida limite, ativo e validade
+          // loteIdx null: reabertura não é venda nova, não checa lote.
+          const av=avaliarCupom(cup, r.cupom, 0, r.forma, null);   // revalida limite, ativo e validade
           if(!av.valido){ const e=new Error("Cupom "+r.cupom+": "+av.motivo); e.cupomInvalido=true; throw e; }
           t.update(refC, { usados: Number(cup.usados||0)+1 });
         } else if(r.deltaCupom<0 && cup){
@@ -1445,7 +1470,7 @@ const DB = {
     if(r.deltaCupom){
       const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}"); const cup=mapa[r.cupom]||null;
       if(r.deltaCupom>0){
-        const av=avaliarCupom(cup, r.cupom, 0, r.forma);
+        const av=avaliarCupom(cup, r.cupom, 0, r.forma, null);
         if(!av.valido){ const e=new Error("Cupom "+r.cupom+": "+av.motivo); e.cupomInvalido=true; throw e; }
         cup.usados=Number(cup.usados||0)+1;
       } else if(cup){ cup.usados=Math.max(0, Number(cup.usados||0)-1); }
@@ -1479,6 +1504,66 @@ const DB = {
     m[cod]=Object.assign(m[cod]||{}, dados);
     localStorage.setItem(LS_CUP, JSON.stringify(m));
   },
+  /* ---------------------------------------------------------------------
+     EDITAR CUPOM. Transacional, para ler `usados` e `valor` atuais e decidir
+     em cima deles. As MESMAS três travas estão na regra do Firestore — o
+     JavaScript aqui é conveniência, a regra é a autoridade:
+
+       1. `usados` nunca é enviado (o contador só anda pelas transações de uso)
+       2. percentual só DIMINUI ou fica igual — sem login, permitir aumento
+          deixaria qualquer visitante transformar um cupom em desconto maior
+       3. `limite` pode subir, mas nunca fica abaixo de `usados`
+
+     O código é o ID do documento, então não tem como ser editado: para outro
+     código, cria-se outro cupom. --------------------------------------- */
+  async editarCupom(cod, campos){
+    const cod2=normCupom(cod);
+    const validar=(atual)=>{
+      if(!atual) throw erroCupom('Cupom não encontrado.');
+      const p={};
+      if(campos.valor!=null){
+        const v=Number(campos.valor);
+        if(!(v>0)||v>100) throw erroCupom('O percentual precisa ser de 1 a 100.');
+        if(v>Number(atual.valor)) throw erroCupom('O percentual só pode diminuir. Para um desconto maior, crie outro cupom.');
+        p.valor=v;
+      }
+      if(campos.limite!=null){
+        const l=Number(campos.limite);
+        if(!(l>=1)) throw erroCupom('O limite precisa ser pelo menos 1.');
+        if(l>2000)  throw erroCupom('O limite máximo por cupom é 2000.');
+        if(l<Number(atual.usados||0)) throw erroCupom('O limite não pode ficar abaixo dos '+Number(atual.usados||0)+' usos já feitos.');
+        p.limite=l;
+      }
+      if(campos.ativo!=null)            p.ativo=!!campos.ativo;
+      if(campos.mostrarNoSite!=null)    p.mostrarNoSite=!!campos.mostrarNoSite;
+      if('validade' in campos)          p.validade=(campos.validade==null?null:Number(campos.validade));
+      if(Array.isArray(campos.formasPermitidas)){
+        const f=campos.formasPermitidas.filter(x=>x==='PIX'||x==='Dinheiro');
+        if(!f.length) throw erroCupom('Escolha pelo menos uma forma de pagamento.');
+        p.formasPermitidas=f;
+      }
+      if(Array.isArray(campos.lotesPermitidos)){
+        p.lotesPermitidos=campos.lotesPermitidos.map(Number).filter(n=>n>=0&&n<10);
+      }
+      if(!Object.keys(p).length) throw erroCupom('Nada foi alterado.');
+      return p;
+    };
+    if(fdb){
+      const ref=fdb.collection("cupons").doc(cod2);
+      return await fdb.runTransaction(async t=>{
+        const d=await t.get(ref);
+        const p=validar(d.exists?d.data():null);
+        t.update(ref,p);          // `usados`, `tipo` e `criadoEm` nunca entram aqui
+        return p;
+      });
+    }
+    const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
+    const p=validar(mapa[cod2]||null);
+    Object.assign(mapa[cod2],p);
+    localStorage.setItem(LS_CUP,JSON.stringify(mapa));
+    return p;
+  },
+
   async apagarCupom(cod){
     if(fdb){ await fdb.collection("cupons").doc(cod).delete(); return; }
     const m=JSON.parse(localStorage.getItem(LS_CUP)||"{}"); delete m[cod];
@@ -1498,12 +1583,15 @@ const DB = {
      --------------------------------------------------------------------- */
   async criarComCupom(insc, baixarTam, codigo, forma, brutoCent){
     const cod=normCupom(codigo);
+    const lote=loteAtualIdx();
     const montar=(cup)=>{
-      const av=avaliarCupom(cup, cod, brutoCent, forma);
+      const av=avaliarCupom(cup, cod, brutoCent, forma, lote);
       if(!av.valido){ const e=new Error(av.motivo); e.cupomInvalido=true; throw e; }
+      // valorCheio sai do próprio brutoCent — não depende de o chamador lembrar.
+      // Sem isso, remover o cupom depois restauraria o valor JÁ COM desconto.
       return { av, doc: Object.assign({}, insc, {
         cupom:cod, cupomPercentual:av.percentual, cupomDesconto:av.desconto,
-        cupomConsumido:true, valor:av.valorFinal }) };
+        cupomConsumido:true, valorCheio:reaisDe(brutoCent), valor:av.valorFinal }) };
     };
     if(fdb){
       const refC=fdb.collection("cupons").doc(cod);
@@ -1580,7 +1668,7 @@ const DB = {
           const dA=await t.get(refAnt); antDoc=dA.exists?dA.data():null;
         }
         /* --- fim das leituras; daqui para baixo só gravações --- */
-        const av=avaliarCupom(dNovo.exists?dNovo.data():null, cod, prep.brutoCent, prep.forma);
+        const av=avaliarCupom(dNovo.exists?dNovo.data():null, cod, prep.brutoCent, prep.forma, loteAtualIdx());
         if(!av.valido) throw erroCupom(av.motivo);
         if(refAnt && antDoc) t.update(refAnt, { usados: Math.max(0, Number(antDoc.usados||0)-1) });
         t.update(refNovo, { usados: Number(dNovo.data().usados||0)+1 });
@@ -1593,7 +1681,7 @@ const DB = {
     const ins=arr.find(x=>x._id===id);
     const prep=preparar(ins);
     const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
-    const av=avaliarCupom(mapa[cod]||null, cod, prep.brutoCent, prep.forma);
+    const av=avaliarCupom(mapa[cod]||null, cod, prep.brutoCent, prep.forma, loteAtualIdx());
     if(!av.valido) throw erroCupom(av.motivo);
     if(prep.antigo && prep.antigo!==cod && mapa[prep.antigo])
       mapa[prep.antigo].usados=Math.max(0,Number(mapa[prep.antigo].usados||0)-1);
@@ -1686,7 +1774,21 @@ function cupomFormatoOk(c){ return /^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(c); }
    Site, balcão e as transações chamam esta função — não existe uma segunda
    conta escondida em outro canto. Recebe o documento do cupom já lido, para
    poder ser usada tanto na interface quanto DENTRO de uma transação. */
-function avaliarCupom(cup, codigo, brutoCent, forma){
+/* COMPATIBILIDADE com cupons criados antes destes campos (ex.: TESTE60):
+   - `mostrarNoSite` ausente  →  false  (vitrine é opt-in; nada aparece sem o
+     organizador marcar, então nenhum cupom antigo vira propaganda sozinho)
+   - `lotesPermitidos` ausente ou vazio  →  TODOS os lotes  (preserva
+     exatamente o comportamento de hoje; um cupom antigo continua valendo) */
+const cupomNaVitrine = cup => !!(cup && cup.mostrarNoSite === true);
+const cupomLotes = cup => (Array.isArray(cup && cup.lotesPermitidos) && cup.lotesPermitidos.length)
+                          ? cup.lotesPermitidos.map(Number) : null;   // null = todos
+const loteAtualIdx = () => Math.min(Number((ST&&ST.loteAtivo)||0), Math.max(0,((ST&&ST.lotes)||[]).length-1));
+const restamDoCupom = cup => Math.max(0, Number(cup&&cup.limite||0) - Number(cup&&cup.usados||0));
+
+/* `loteIdx` null/undefined = não checar lote. Usado na REABERTURA de uma
+   inscrição: ela já tinha usado o cupom legitimamente, então voltar atrás não
+   é uma venda nova e não deve esbarrar no lote de hoje. */
+function avaliarCupom(cup, codigo, brutoCent, forma, loteIdx){
   const bc = Math.max(0, Number(brutoCent)||0);
   const nao = motivo => ({ valido:false, codigo, motivo, percentual:0,
                            descontoCent:0, desconto:0,
@@ -1695,6 +1797,11 @@ function avaliarCupom(cup, codigo, brutoCent, forma){
   if(!cup)              return nao('Cupom não encontrado.');
   if(cup.ativo===false) return nao('Este cupom está desativado.');
   if(cup.validade && Date.now() > Number(cup.validade)) return nao('Este cupom venceu.');
+  if(loteIdx !== null && loteIdx !== undefined){
+    const lotes = cupomLotes(cup);
+    if(lotes && lotes.indexOf(Number(loteIdx)) === -1)
+      return nao('Este cupom não vale para o lote que está em vigor agora.');
+  }
   const permitidas = (Array.isArray(cup.formasPermitidas) && cup.formasPermitidas.length)
                    ? cup.formasPermitidas : ['PIX','Dinheiro'];
   if(!permitidas.includes(forma)) return nao('Este cupom não vale para pagamento em '+forma+'.');
@@ -1718,7 +1825,7 @@ function avaliarCupom(cup, codigo, brutoCent, forma){
    a tela mostra é sugestão; quem manda é a transação. */
 async function aplicarCupom(codigo, bruto, forma){
   const cod = normCupom(codigo), bc = centDe(bruto);
-  if(!cod) return avaliarCupom(null, cod, bc, forma);
+  if(!cod) return avaliarCupom(null, cod, bc, forma, loteAtualIdx());
   if(!cupomFormatoOk(cod)) return { valido:false, codigo:cod, percentual:0,
       motivo:'Código inválido — use letras e números.', descontoCent:0, desconto:0,
       valorFinalCent:bc, valorFinal:reaisDe(bc) };
@@ -1727,7 +1834,7 @@ async function aplicarCupom(codigo, bruto, forma){
   catch(e){ console.error(e); return { valido:false, codigo:cod, percentual:0,
       motivo:'Não consegui verificar o cupom agora. Tente de novo.', descontoCent:0, desconto:0,
       valorFinalCent:bc, valorFinal:reaisDe(bc) }; }
-  return avaliarCupom(cup, cod, bc, forma);
+  return avaliarCupom(cup, cod, bc, forma, loteAtualIdx());
 }
 
 /* ===================== SETTINGS (preços/estoque/kit) ===================== */
@@ -1888,6 +1995,7 @@ function renderPagina(){
     el('lotesStrip').innerHTML=(ST.lotes||[]).map((l,i)=>`<div class="lote ${i===li?'on':''} ${i<li?'past':''}"><b>${l.nome}</b><span>${BRL(l.preco)}</span>${l.ate?`<small>${l.ate}</small>`:''}</div>`).join("");
   } else { el('lotesStrip').style.display='none'; el('lotesStrip').innerHTML=""; }
   el('lotesNota').innerHTML="Pague no <b>PIX</b>, em <b>dinheiro</b> ou no <b>cartão em até 3x sem juros</b>.";
+  renderVitrine();
   el('kitGrid').innerHTML=c.kit.map((k,i)=>{
     const st=ST.kit[i]||{disp:true,selo:""};
     const tag = !st.disp ? `<span class="kit-tag t-off"><span>Esgotado</span></span>` : (st.selo?`<span class="kit-tag t-gold"><span>${st.selo}</span></span>`:"");
@@ -2175,6 +2283,67 @@ function selPay(node){
   // Cartão paga por link pré-gerado com o valor dentro da URL: cupom não cabe.
   if(sel.pay==='Cartão' && sel.cupom) limparCupomSite('Cupom removido: não vale para pagamento com cartão.');
   atualizaCupomUI(); avisoPag(); renderResumo();
+}
+
+/* ═══════════ VITRINE DE CUPONS (página pública) ═══════════
+   Lê SÓ a coleção cupons — os números de "restam" saem de limite − usados do
+   próprio documento. Nenhuma inscrição é carregada para isso. */
+let vitCache=[];
+async function renderVitrine(){
+  const box=el('vitrineCupons'); if(!box) return;
+  let lista=[];
+  try{ lista=await DB.listCupons(); }
+  catch(e){ box.style.display='none'; box.innerHTML=''; return; }   // sem permissão ou offline: some, sem quebrar
+  const lote=loteAtualIdx(), agora=Date.now();
+  const visiveis = lista.filter(c=>{
+    if(!cupomNaVitrine(c)) return false;
+    if(c.ativo===false) return false;
+    if(c.validade && agora>Number(c.validade)) return false;
+    if(!(Number(c.limite)>=1)) return false;
+    if(restamDoCupom(c)<=0) return false;
+    const lotes=cupomLotes(c);
+    if(lotes && lotes.indexOf(lote)===-1) return false;
+    return true;
+  }).sort((a,b)=>Number(b.valor)-Number(a.valor));
+  vitCache=visiveis;
+  if(!visiveis.length){ box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='block';
+  box.innerHTML=`
+    <div class="vitrine-tit">Cupons disponíveis</div>
+    <p class="vitrine-sub">Aproveite enquanto houver.</p>
+    <div class="vit-grid">${visiveis.map(c=>{
+      const restam=restamDoCupom(c), acabando=restam<=10;
+      return `<div class="vit-card ${acabando?'acabando':''}">
+        <div class="vit-off">${Number(c.valor)}<small>% OFF</small></div>
+        <span class="vit-cod">${esc(c.codigo)}</span>
+        <span class="vit-restam">${restam===1?'Resta 1 uso':'Restam '+restam+' usos'}</span>
+        <button class="vit-btn" onclick="resgatarCupom('${esc(c.codigo)}')">Resgatar</button>
+      </div>`;
+    }).join('')}</div>`;
+}
+
+/* Abre a inscrição já com o cupom preenchido — o visitante não digita nada. */
+async function resgatarCupom(codigo){
+  const cod=normCupom(codigo);
+  abrirInscricao();                 // já seleciona o lote/preço atuais e zera o cupom
+  const d=distSel()||CONFIG.distancias[0];
+  const bruto=precoDe(d.id)+(CONFIG.taxaServico||0);
+  const r=await aplicarCupom(cod, bruto, sel.pay);   // revalida contra o banco AGORA
+  const campo=el('fCupom'), msg=el('fCupomMsg'), btn=el('fCupomBtn');
+  if(!r.valido){
+    // Acabou entre a vitrine e o clique: não gera inscrição com desconto falso.
+    sel.cupom=null;
+    if(msg){ msg.textContent=r.motivo; msg.className='cupom-msg ruim'; }
+    toast(r.motivo);
+    renderVitrine();                // a vitrine se corrige sozinha
+  } else {
+    sel.cupom={codigo:r.codigo, percentual:r.percentual};
+    if(campo){ campo.value=r.codigo; campo.disabled=true; }
+    if(btn) btn.textContent='Remover';
+    if(msg){ msg.innerHTML='Cupom <b>'+esc(r.codigo)+'</b> aplicado — '+r.percentual+'% de desconto.'; msg.className='cupom-msg bom'; }
+    toast('Cupom '+r.codigo+' aplicado ✓');
+  }
+  renderResumo();
 }
 
 /* ---- CUPOM no site ---- */
@@ -2899,10 +3068,15 @@ async function renderCupons(){
                  : (!limiteOk) ? '<span style="color:var(--alerta)">limite inválido</span>'
                  : (usados>=limite) ? '<span style="color:var(--alerta)">esgotado</span>'
                  : '<span style="color:var(--ok)">ativo</span>';
+    const formas=(Array.isArray(c.formasPermitidas)&&c.formasPermitidas.length)?c.formasPermitidas:['PIX','Dinheiro'];
+    const lotes=cupomLotes(c);
+    const txtLotes = lotes ? lotes.map(i=>((ST.lotes||[])[i]||{}).nome||('lote '+(i+1))).join(', ') : 'todos os lotes';
     return `<div class="cfg-row" style="grid-template-columns:1fr">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <div><b style="font-size:16px">${esc(c.codigo)}</b> · ${Number(c.valor)||0}% · ${estado}</div>
+        <div><b style="font-size:16px">${esc(c.codigo)}</b> · ${Number(c.valor)||0}% · ${estado}
+          ${cupomNaVitrine(c)?'<span style="color:var(--ok);font-size:12px"> · na vitrine</span>':'<span style="color:var(--muted);font-size:12px"> · oculto</span>'}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="mini leve" onclick="abrirEdicaoCupom('${esc(c.codigo)}')">Editar</button>
           <button class="mini ${c.ativo===false?'ok':'gray'}" onclick="alternarCupom('${esc(c.codigo)}')">${c.ativo===false?'Ativar':'Desativar'}</button>
           <button class="mini no" onclick="removerCupom('${esc(c.codigo)}')">Excluir</button>
         </div>
@@ -2912,8 +3086,12 @@ async function renderCupons(){
         ${c.validade?` · vale até ${dataBR(Number(c.validade))}`:''}
       </div>
       <div style="color:var(--muted);font-size:12.5px;margin-top:3px">
+        Vale em: <b style="color:#fff">${esc(txtLotes)}</b> · pagamento: <b style="color:#fff">${esc(formas.join(' e '))}</b>
+      </div>
+      <div style="color:var(--muted);font-size:12.5px;margin-top:3px">
         Inscrições: ${u.total} (${u.conf} confirmadas · ${u.pend} aguardando · ${u.canc} canceladas) · desconto dado ${BRL(u.desc)}
-      </div></div>`;
+      </div>
+      <div id="edCup_${esc(c.codigo)}" style="display:none"></div></div>`;
   }).join('') : `<p style="color:var(--muted);font-size:13px">Nenhum cupom criado ainda.</p>`;
 
   box.innerHTML=`
@@ -2924,6 +3102,13 @@ async function renderCupons(){
         <div class="field"><label>Percentual (%) <span class="req">*</span></label><input id="cupNovoPct" type="number" min="1" max="100" step="1" placeholder="10"></div>
         <div class="field"><label>Limite de usos <span class="req">*</span></label><input id="cupNovoLim" type="number" min="1" max="2000" step="1" placeholder="50"></div>
         <div class="field"><label>Validade (opcional)</label><input id="cupNovoVal" type="date"></div>
+      </div>
+      <div style="margin-top:12px">
+        <label class="checkrow"><input type="checkbox" id="cupNovoSite"><span>Mostrar este cupom na vitrine do site</span></label>
+        <div style="color:var(--muted);font-size:12.5px;margin:10px 0 6px">Vale em quais lotes? (nenhum marcado = todos)</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          ${(ST.lotes||[]).map((l,i)=>`<label class="checkrow" style="margin:0"><input type="checkbox" id="cupNovoLote_${i}"><span>${esc(l.nome)}</span></label>`).join('')}
+        </div>
       </div>
       <div class="cupom-msg" id="cupNovoMsg" style="margin-top:8px"></div>
       <button class="btn btn-cta" style="width:100%;padding:15px;margin-top:12px" onclick="criarCupom()"><span>Criar cupom</span></button>
@@ -2947,13 +3132,78 @@ async function criarCupom(){
   if(dataTxt){ const d=new Date(dataTxt+'T23:59:59'); if(!isNaN(d)) validade=d.getTime(); }
   try{
     if(await DB.getCupom(cod)) return mostrar('Já existe um cupom com o código '+cod+'.');
+    const lotesSel=[]; (ST.lotes||[]).forEach((l,i)=>{ const b=el('cupNovoLote_'+i); if(b&&b.checked) lotesSel.push(i); });
     await DB.salvarCupom(cod, { ativo:true, tipo:'percentual', valor:pct, limite:lim,
-      usados:0, validade, formasPermitidas:['PIX','Dinheiro'], criadoEm:Date.now() });
+      usados:0, validade, formasPermitidas:['PIX','Dinheiro'], criadoEm:Date.now(),
+      mostrarNoSite: !!(el('cupNovoSite')&&el('cupNovoSite').checked),
+      lotesPermitidos: lotesSel });
     el('cupNovoCod').value=''; el('cupNovoPct').value=''; el('cupNovoLim').value=''; el('cupNovoVal').value='';
     toast('Cupom '+cod+' criado ✓');
     await renderCupons();
   }catch(e){ console.error(e); mostrar('Não consegui criar o cupom. Veja o console (F12).'); }
 }
+/* Edição inline. O percentual só desce e o limite não cai abaixo dos usos —
+   as mesmas travas estão na regra do Firestore, que é quem manda de verdade. */
+function abrirEdicaoCupom(cod){
+  const box=el('edCup_'+cod); if(!box) return;
+  if(box.style.display!=='none'){ box.style.display='none'; return; }
+  const c=cupCache.find(x=>x.codigo===cod); if(!c) return;
+  const usados=Number(c.usados||0);
+  const lotes=cupomLotes(c);
+  const dt = c.validade ? new Date(Number(c.validade)) : null;
+  const dtTxt = dt && !isNaN(dt) ? dt.toISOString().slice(0,10) : '';
+  box.style.display='block';
+  box.innerHTML=`<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:14px">
+    <div class="form-grid">
+      <div class="field"><label>Percentual (%) — só pode diminuir</label>
+        <input id="ed_pct_${cod}" type="number" min="1" max="${Number(c.valor)}" step="1" value="${Number(c.valor)}"></div>
+      <div class="field"><label>Limite — mínimo ${usados} (já usados)</label>
+        <input id="ed_lim_${cod}" type="number" min="${Math.max(1,usados)}" max="2000" step="1" value="${Number(c.limite)||1}"></div>
+      <div class="field"><label>Validade (vazio = sem prazo)</label>
+        <input id="ed_val_${cod}" type="date" value="${dtTxt}"></div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:14px;flex-wrap:wrap">
+      <label class="checkrow" style="margin:0"><input type="checkbox" id="ed_pix_${cod}" ${(!Array.isArray(c.formasPermitidas)||c.formasPermitidas.indexOf('PIX')>-1)?'checked':''}><span>PIX</span></label>
+      <label class="checkrow" style="margin:0"><input type="checkbox" id="ed_din_${cod}" ${(!Array.isArray(c.formasPermitidas)||c.formasPermitidas.indexOf('Dinheiro')>-1)?'checked':''}><span>Dinheiro</span></label>
+      <label class="checkrow" style="margin:0"><input type="checkbox" id="ed_site_${cod}" ${cupomNaVitrine(c)?'checked':''}><span>Mostrar na vitrine</span></label>
+      <label class="checkrow" style="margin:0"><input type="checkbox" id="ed_ativo_${cod}" ${c.ativo===false?'':'checked'}><span>Ativo</span></label>
+    </div>
+    <div style="color:var(--muted);font-size:12.5px;margin:12px 0 6px">Vale em quais lotes? (nenhum marcado = todos)</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      ${(ST.lotes||[]).map((l,i)=>`<label class="checkrow" style="margin:0"><input type="checkbox" id="ed_lote_${cod}_${i}" ${(lotes&&lotes.indexOf(i)>-1)?'checked':''}><span>${esc(l.nome)}</span></label>`).join('')}
+    </div>
+    <div class="cupom-msg" id="ed_msg_${cod}" style="margin-top:10px"></div>
+    <button class="btn btn-cta" style="width:100%;padding:13px;margin-top:10px" onclick="salvarEdicaoCupom('${cod}')"><span>Salvar alterações</span></button>
+    <p class="bal-desc-nota">O contador de usos nunca muda por aqui. Para aumentar o percentual, crie outro cupom.</p>
+  </div>`;
+}
+async function salvarEdicaoCupom(cod){
+  const msg=el('ed_msg_'+cod);
+  const mostrar=(t,ok)=>{ if(msg){msg.textContent=t; msg.className='cupom-msg '+(ok?'bom':'ruim');} };
+  const formas=[]; if(el('ed_pix_'+cod).checked)formas.push('PIX'); if(el('ed_din_'+cod).checked)formas.push('Dinheiro');
+  if(!formas.length) return mostrar('Escolha pelo menos uma forma de pagamento.');
+  const lotesSel=[]; (ST.lotes||[]).forEach((l,i)=>{ const b=el('ed_lote_'+cod+'_'+i); if(b&&b.checked) lotesSel.push(i); });
+  const dTxt=el('ed_val_'+cod).value;
+  let validade=null; if(dTxt){ const d=new Date(dTxt+'T23:59:59'); if(!isNaN(d)) validade=d.getTime(); }
+  try{
+    await comPrazo(DB.editarCupom(cod,{
+      valor: parseInt(el('ed_pct_'+cod).value,10),
+      limite: parseInt(el('ed_lim_'+cod).value,10),
+      validade,
+      formasPermitidas: formas,
+      lotesPermitidos: lotesSel,
+      mostrarNoSite: el('ed_site_'+cod).checked,
+      ativo: el('ed_ativo_'+cod).checked
+    }),15000);
+    toast('Cupom '+cod+' atualizado ✓');
+    await renderCupons(); renderPagina();
+  }catch(e){
+    console.error(e);
+    if(e && e.semResposta) mostrar('Sem resposta do servidor. Clique em Cupons de novo e confira antes de repetir.');
+    else mostrar(e.message||'Não consegui salvar.');
+  }
+}
+
 async function alternarCupom(cod){
   const c=cupCache.find(x=>x.codigo===cod); if(!c) return;
   const ligar = c.ativo===false;
@@ -3006,6 +3256,7 @@ function caixaDoDia(){
 function setCaixaPeriodo(p){ caixaPeriodo=p; renderBalcao(); }
 function renderBalcao(){
   balCupom=null;   // o formulário é reconstruído: cupom não gruda na próxima venda
+  setTimeout(renderCuponsBalcao,0);   // lista os cupons depois que o HTML existir
   const preco=precoDe(CONFIG.distancias[0].id), lote=loteAtual();
   const cx=caixaDoDia();
   el('admBalcao').innerHTML=`
@@ -3054,6 +3305,7 @@ function renderBalcao(){
           <button type="button" class="cupom-btn" id="balCupomBtn" onclick="btnCupomBalcao()">Aplicar</button>
         </div>
         <div class="cupom-msg" id="balCupomMsg"></div>
+        <div id="balCupomLista"></div>
         <p class="bal-desc-nota">Cupom e desconto manual <b>não podem ser usados juntos</b> — use um ou outro.</p>
       </details>
 
@@ -3158,6 +3410,40 @@ function limparCupomBal(msg){
   const m=el('balCupomMsg'); if(m){ m.textContent=msg||''; m.className='cupom-msg'+(msg?' ruim':''); }
   const b=el('balCupomBtn'); if(b) b.textContent='Aplicar';
 }
+/* Lista para o operador não precisar decorar código nenhum.
+   Mostra só o que está realmente disponível no lote de agora. */
+async function renderCuponsBalcao(){
+  const box=el('balCupomLista'); if(!box) return;
+  let lista=[];
+  try{ lista=await DB.listCupons(); }
+  catch(e){ box.innerHTML=`<p class="bal-desc-nota" style="color:var(--alerta)">Não consegui carregar os cupons.</p>`; return; }
+  const lote=loteAtualIdx(), agora=Date.now(), forma=balPagEscolhido();
+  const disp=lista.filter(c=>{
+    if(c.ativo===false) return false;
+    if(c.validade && agora>Number(c.validade)) return false;
+    if(!(Number(c.limite)>=1)) return false;
+    if(restamDoCupom(c)<=0) return false;
+    const lotes=cupomLotes(c); if(lotes && lotes.indexOf(lote)===-1) return false;
+    const perm=(Array.isArray(c.formasPermitidas)&&c.formasPermitidas.length)?c.formasPermitidas:['PIX','Dinheiro'];
+    return forma==='Cartão' ? false : perm.indexOf(forma)>-1;
+  }).sort((a,b)=>Number(b.valor)-Number(a.valor));
+  if(forma==='Cartão'){
+    box.innerHTML=`<p class="bal-desc-nota" style="margin-top:10px">Cupom não vale para cartão — o link do lote já tem o valor fixo.</p>`; return;
+  }
+  if(!disp.length){ box.innerHTML=`<p class="bal-desc-nota" style="margin-top:10px">Nenhum cupom disponível para ${esc(forma)} no lote de agora.</p>`; return; }
+  box.innerHTML=`<div style="margin-top:12px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;color:var(--muted);letter-spacing:.5px">Cupons disponíveis</div>
+    ${disp.map(c=>`<div class="bal-cup">
+      <div><b>${esc(c.codigo)} — ${Number(c.valor)}%</b><small>${restamDoCupom(c)} ${restamDoCupom(c)===1?'restante':'restantes'}</small></div>
+      <button class="mini ok" onclick="aplicarCupomBalcaoDireto('${esc(c.codigo)}')">Aplicar</button>
+    </div>`).join('')}</div>`;
+}
+async function aplicarCupomBalcaoDireto(cod){
+  const campo=el('balCupom'); if(campo && !balCupom) campo.value=cod;
+  if(balCupom) limparCupomBal('');
+  const c2=el('balCupom'); if(c2) c2.value=cod;
+  await btnCupomBalcao();
+  renderCuponsBalcao();
+}
 async function btnCupomBalcao(){
   const campo=el('balCupom'), msg=el('balCupomMsg'), btn=el('balCupomBtn');
   if(balCupom){ limparCupomBal(''); atualizaValorBal(); return; }
@@ -3208,7 +3494,7 @@ function balPay(node){
   if(cx){ cx.style.display = node.dataset.pay==='Dinheiro' ? 'flex' : 'none'; if(node.dataset.pay!=='Dinheiro'){ el('balRecebido').value=''; el('balTroco').innerHTML=''; } }
   // Cartão cobra pelo link do lote, com o valor dentro da URL: cupom sai.
   if(node.dataset.pay==='Cartão' && balCupom) limparCupomBal('Cupom removido: não vale para cartão.');
-  atualizaValorBal();
+  atualizaValorBal(); renderCuponsBalcao();
 }
 
 function notaCartaoBal(){
