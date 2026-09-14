@@ -132,6 +132,8 @@ section{position:relative;z-index:2;padding:56px 0}
 .info-card ul{list-style:none}
 .info-card ul li{padding:7px 0 7px 24px;position:relative;color:var(--muted);font-size:14.5px}
 .info-card ul li:before{content:"";position:absolute;left:0;top:14px;width:10px;height:10px;background:var(--amarelo);transform:skewX(-12deg)}
+/* lista de vias do percurso: quebra sozinha no celular sem virar um parágrafo */
+.info-card ul li .vias{display:block;margin-top:5px;font-size:13px;line-height:1.6;color:#fff;opacity:.72;overflow-wrap:break-word}
 
 .faq{max-width:980px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
 .faq details{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;margin:0;padding:0 16px;transition:.2s}
@@ -1252,22 +1254,28 @@ const CONFIG = {
     { hora:"07:00", o:"Mesa de frutas" },
     { hora:"07:30", o:"Pagode ao vivo" }
   ],
-  percurso:["Rua São José, 59 — Gravatá/PE","Largada e chegada na Everest Academia","Ida e volta pela R. 4 de Outubro","Dois pontos de hidratação no trajeto"],
+  percurso:[
+    "Rua São José, 59 — Gravatá/PE",
+    "Saída e chegada na Everest Academia",
+    "Circuito de aproximadamente 6 km",
+    "Trajeto pelas principais vias<span class='vias'>Av. Joaquim Didier → Praça Rodolfo de Morais → Av. Dantas Barreto → Radial Urbana → Rua Quatorze → Rua Dr. Amaury de Medeiros → Rua Hilda Gonzáles → Av. Joaquim Didier</span>",
+    "Pontos de hidratação no percurso"
+  ],
 
   /* Mapa do percurso da edição atual.
      img      -> caminho da imagem (deixe "" para esconder o bloco inteiro)
      destaques-> selos acima do mapa. ico: rota | gota | relogio | bandeira
      nota     -> textinho cinza embaixo do mapa                                */
   percursoAtual:{
-    img:"percurso-2a-edicao.svg",
-    alt:"Mapa do percurso da 2ª Corrida Everest — ida e volta pela R. 4 de Outubro",
+    img:"percurso-3a-edicao.svg",
+    alt:"Mapa do percurso da 2ª Corrida Everest — circuito de 6 km em Gravatá/PE",
     destaques:[
-      { ico:"rota",     t:"Ida e volta",  v:"6,4 km" },
-      { ico:"gota",     t:"Hidratação",   v:"2 pontos" },
+      { ico:"rota",     t:"Circuito",     v:"6 km" },
+      { ico:"gota",     t:"",             v:"Pontos de hidratação" },
       { ico:"bandeira", t:"Largada",      v:"Everest Academia" },
       { ico:"relogio",  t:"Horário",      v:"6h" }
     ],
-    nota:"Traçado ilustrativo. O percurso é o mesmo da 1ª edição."
+    nota:""
   },
 
   regras:["Retirada do kit a partir de 14/09, na recepção da Everest","Leve um documento para a retirada","Vaga garantida após a confirmação do pagamento","Reembolso em até 7 dias após a compra"],
@@ -2073,8 +2081,9 @@ function renderPercursoAtual(){
   c.style.display='block';
   const chips=(p.destaques||[]).map(d=>{
     const ico=ICO_PA[d.ico]||ICO_PA.rota;
-    return `<span class="pa-chip"><svg viewBox="0 0 24 24" aria-hidden="true">${ico}</svg>
-      ${esc(d.t)} <b>${esc(d.v)}</b></span>`;
+    // rótulo é opcional: sem ele o chip mostra só o ícone e o valor, sem espaço sobrando
+    const rot = d.t ? `${esc(d.t)} ` : '';
+    return `<span class="pa-chip"><svg viewBox="0 0 24 24" aria-hidden="true">${ico}</svg>${rot}<b>${esc(d.v)}</b></span>`;
   }).join("");
   const alt=esc(p.alt||('Percurso da '+CONFIG.evento.nome));
   c.innerHTML=`${chips?`<div class="pa-chips">${chips}</div>`:''}

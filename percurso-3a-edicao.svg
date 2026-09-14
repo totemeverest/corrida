@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" width="1000" height="500" role="img" aria-label="Percurso da 2ª Corrida Everest: 6 km em circuito, com largada e chegada na Everest Academia, passando pela Praça Rodolfo de Morais, Avenida Dantas Barreto, Radial Urbana, Rua Quatorze, Rua Dr. Amaury de Medeiros e Rua Hilda Gonzáles">
+  <title>Percurso da 2ª Corrida Everest — 6 km</title>
+  <defs>
+    <linearGradient id="fundo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a1263"/><stop offset="58%" stop-color="#1d0f47"/><stop offset="100%" stop-color="#120829"/>
+    </linearGradient>
+    <radialGradient id="aurora" cx="22%" cy="8%" r="70%">
+      <stop offset="0%" stop-color="#8f5cff" stop-opacity=".38"/><stop offset="100%" stop-color="#8f5cff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aurora2" cx="88%" cy="96%" r="62%">
+      <stop offset="0%" stop-color="#2fd8d0" stop-opacity=".16"/><stop offset="100%" stop-color="#2fd8d0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ouro" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff2b8"/><stop offset="42%" stop-color="#ffd24a"/><stop offset="100%" stop-color="#ff9d17"/>
+    </linearGradient>
+    <linearGradient id="rota" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff2b8"/><stop offset="35%" stop-color="#ffd24a"/><stop offset="72%" stop-color="#ffb52e"/><stop offset="100%" stop-color="#ff9d17"/>
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowFraco" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="14"/></filter>
+
+    <!-- CIRCUITO ÚNICO E CONTÍNUO — sem nenhuma seta: a linha não indica sentido. -->
+    <path id="circuito" d="M56 166
+      C88 161, 122 158, 150 157
+      C150 146, 156 139, 168 138
+      L197 137
+      C208 137, 211 144, 210 153
+      C236 157, 268 160, 304 163
+      C372 169, 448 175, 512 180
+      C560 188, 610 200, 654 211
+      C682 218, 702 221, 714 220
+      C736 215, 756 206, 772 198
+      C806 181, 836 170, 858 166
+      C878 164, 892 172, 898 188
+      C903 204, 903 222, 901 240
+      C899 258, 894 272, 882 282
+      C866 294, 842 300, 820 304
+      C790 310, 762 314, 744 316
+      C738 334, 735 356, 733 376
+      C731 386, 724 392, 710 393
+      C690 394, 668 392, 652 390
+      C642 389, 636 387, 632 386
+      C600 377, 572 367, 552 359
+      C528 348, 508 336, 492 327
+      C470 314, 452 303, 442 297
+      C426 291, 414 288, 406 285
+      C388 278, 375 267, 366 254
+      C359 241, 355 226, 351 211
+      C347 200, 342 194, 332 190
+      C321 187, 310 186, 296 186
+      C248 189, 178 187, 108 180
+      C84 177, 67 172, 56 168"/>
+  </defs>
+
+  <rect width="1000" height="500" fill="url(#fundo)"/>
+  <rect width="1000" height="500" fill="url(#aurora)"/><rect width="1000" height="500" fill="url(#aurora2)"/>
+
+  <!-- malha urbana sugerida -->
+  <g stroke="#fff" stroke-opacity=".045" stroke-width="2" fill="none">
+    <path d="M0 250 L1000 176"/><path d="M0 330 L1000 250"/><path d="M0 414 L1000 330"/>
+    <path d="M250 120 L214 500"/><path d="M430 112 L394 500"/>
+    <path d="M620 104 L584 500"/><path d="M800 98 L766 500"/>
+  </g>
+
+  <!-- Rio Ipojuca -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M352 84 C358 125, 368 158, 388 188 C412 222, 452 242, 512 250 C580 258, 655 262, 704 267 C748 272, 772 284, 780 304 C790 336, 793 372, 795 412"
+          stroke="#3f7fd6" stroke-opacity=".3" stroke-width="13"/>
+    <path d="M352 84 C358 125, 368 158, 388 188 C412 222, 452 242, 512 250 C580 258, 655 262, 704 267 C748 272, 772 284, 780 304 C790 336, 793 372, 795 412"
+          stroke="#9fd9ff" stroke-opacity=".17" stroke-width="3.5"/>
+  </g>
+  <text x="588" y="252" fill="#9fd9ff" fill-opacity=".45" font-family="Montserrat,Arial,sans-serif"
+        font-size="13" font-style="italic" letter-spacing="1" text-anchor="middle"
+        transform="rotate(4 588 252)">Rio Ipojuca</text>
+
+  <!-- brilho -->
+  <use href="#circuito" stroke="#ffd24a" stroke-opacity=".2" stroke-width="26" fill="none" stroke-linecap="round" filter="url(#glowFraco)"/>
+  <!-- contorno -->
+  <use href="#circuito" stroke="#120829" stroke-opacity=".6" stroke-width="13.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- LINHA DO PERCURSO -->
+  <use href="#circuito" stroke="url(#rota)" stroke-width="7.5" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+
+  <!-- nomes das vias, afastados da linha -->
+  <g fill="#fff" fill-opacity=".55" font-family="Montserrat,Arial,sans-serif" font-size="12.5" font-weight="700">
+    <text x="622" y="180" text-anchor="middle" transform="rotate(9 622 180)">Av. Dantas Barreto</text>
+    <text x="812" y="334" text-anchor="middle" transform="rotate(-13 812 334)">Radial Urbana</text>
+    <text x="676" y="414" text-anchor="middle">R. Quatorze</text>
+    <text x="322" y="254" text-anchor="middle" transform="rotate(-74 322 254)">R. Dr. Amaury de Medeiros</text>
+  </g>
+
+  <!-- pontos numerados -->
+  <g font-family="Montserrat,Arial,sans-serif" font-size="12" font-weight="800" text-anchor="middle">
+    <circle cx="183" cy="137" r="13" fill="#120829" stroke="#ffd24a" stroke-width="2.4"/><text x="183" y="141.5" fill="#ffd24a">1</text>
+    <circle cx="600" cy="197" r="13" fill="#120829" stroke="#ffd24a" stroke-width="2.4"/><text x="600" y="201.5" fill="#ffd24a">2</text>
+    <circle cx="790" cy="310" r="13" fill="#120829" stroke="#ffd24a" stroke-width="2.4"/><text x="790" y="314.5" fill="#ffd24a">3</text>
+    <circle cx="678" cy="392" r="13" fill="#120829" stroke="#ffd24a" stroke-width="2.4"/><text x="678" y="396.5" fill="#ffd24a">4</text>
+    <circle cx="357" cy="232" r="13" fill="#120829" stroke="#ffd24a" stroke-width="2.4"/><text x="357" y="236.5" fill="#ffd24a">5</text>
+    <circle cx="150" cy="184" r="13" fill="#120829" stroke="#ffd24a" stroke-width="2.4"/><text x="150" y="188.5" fill="#ffd24a">6</text>
+  </g>
+
+  <!-- LARGADA / CHEGADA -->
+  <g>
+    <circle cx="56" cy="167" r="28" fill="#ffd24a" fill-opacity=".14"/>
+    <circle cx="56" cy="167" r="17" fill="#120829" stroke="#ffd24a" stroke-width="2.8"/>
+    <clipPath id="flag3"><circle cx="56" cy="167" r="13.5"/></clipPath>
+    <g clip-path="url(#flag3)"><rect x="42" y="153" width="28" height="28" fill="#ffd24a"/>
+      <g fill="#120829">
+        <rect x="42" y="153" width="7" height="7"/><rect x="56" y="153" width="7" height="7"/>
+        <rect x="49" y="160" width="7" height="7"/><rect x="63" y="160" width="7" height="7"/>
+        <rect x="42" y="167" width="7" height="7"/><rect x="56" y="167" width="7" height="7"/>
+        <rect x="49" y="174" width="7" height="7"/><rect x="63" y="174" width="7" height="7"/>
+      </g></g>
+    <rect x="34" y="256" width="244" height="56" rx="15" fill="url(#ouro)"/>
+    <text x="156" y="280" text-anchor="middle" fill="#120829" font-family="Anton,Impact,sans-serif" font-size="19" font-style="italic" letter-spacing=".8">LARGADA / CHEGADA</text>
+    <text x="156" y="300" text-anchor="middle" fill="#120829" fill-opacity=".82" font-family="Montserrat,Arial,sans-serif" font-size="10.5" font-weight="800">Everest Academia · Av. Joaquim Didier</text>
+  </g>
+
+  <!-- cabeçalho -->
+  <text x="34" y="48" fill="#fff" font-family="Anton,Impact,sans-serif" font-size="26" font-style="italic" letter-spacing="1">PERCURSO DA 2ª CORRIDA EVEREST</text>
+  <rect x="34" y="58" width="120" height="3" rx="2" fill="url(#ouro)"/>
+  <text x="34" y="82" fill="#c9b8f5" font-family="Montserrat,Arial,sans-serif" font-size="13" font-weight="600">Gravatá – PE</text>
+  <!-- pílulas dimensionadas para o fallback Arial: o SVG é standalone e
+       Montserrat não carrega, então a medida real é a da Arial. -->
+  <rect x="34" y="94" width="178" height="29" rx="14.5" fill="#fff" fill-opacity=".07" stroke="#fff" stroke-opacity=".16"/>
+  <text x="123" y="113" text-anchor="middle" fill="#fff" font-family="Montserrat,Arial,sans-serif" font-size="11.5" font-weight="800">20 DE SETEMBRO · 2026</text>
+  <rect x="220" y="94" width="108" height="29" rx="14.5" fill="#fff" fill-opacity=".07" stroke="#fff" stroke-opacity=".16"/>
+  <text x="274" y="113" text-anchor="middle" fill="#ffd24a" font-family="Montserrat,Arial,sans-serif" font-size="11.5" font-weight="800">LARGADA 6H</text>
+
+  <!-- distância -->
+  <rect x="872" y="26" width="90" height="3" rx="2" fill="url(#ouro)"/>
+  <text x="962" y="70" text-anchor="end" fill="#fff" font-family="Anton,Impact,sans-serif" font-size="38" font-style="italic">6 KM</text>
+
+  <!-- legenda -->
+  <g font-family="Montserrat,Arial,sans-serif">
+    <rect x="28" y="394" width="502" height="92" rx="16" fill="#120829" fill-opacity=".58" stroke="#fff" stroke-opacity=".14"/>
+    <g font-size="11.5" font-weight="800" text-anchor="middle" fill="#ffd24a">
+      <circle cx="52" cy="418" r="10.5" fill="#120829" stroke="#ffd24a" stroke-width="1.9"/><text x="52" y="422">1</text>
+      <circle cx="52" cy="442" r="10.5" fill="#120829" stroke="#ffd24a" stroke-width="1.9"/><text x="52" y="446">2</text>
+      <circle cx="52" cy="466" r="10.5" fill="#120829" stroke="#ffd24a" stroke-width="1.9"/><text x="52" y="470">3</text>
+      <circle cx="290" cy="418" r="10.5" fill="#120829" stroke="#ffd24a" stroke-width="1.9"/><text x="290" y="422">4</text>
+      <circle cx="290" cy="442" r="10.5" fill="#120829" stroke="#ffd24a" stroke-width="1.9"/><text x="290" y="446">5</text>
+      <circle cx="290" cy="466" r="10.5" fill="#120829" stroke="#ffd24a" stroke-width="1.9"/><text x="290" y="470">6</text>
+    </g>
+    <g font-size="13" font-weight="600" fill="#fff" fill-opacity=".82">
+      <text x="70" y="423">Praça Rodolfo de Morais</text>
+      <text x="70" y="447">Av. Dantas Barreto</text>
+      <text x="70" y="471">Radial Urbana</text>
+      <text x="308" y="423">Rua Quatorze</text>
+      <text x="308" y="447">R. Dr. Amaury de Medeiros</text>
+      <text x="308" y="471">Rua Hilda Gonzáles</text>
+    </g>
+  </g>
+
+  <!-- norte -->
+  <g transform="translate(944,432)">
+    <circle r="20" fill="#fff" fill-opacity=".06" stroke="#fff" stroke-opacity=".18"/>
+    <path d="M0 -14 L5 4 L0 0 L-5 4 Z" fill="#ffd24a"/>
+    <path d="M0 14 L5 -4 L0 0 L-5 -4 Z" fill="#fff" fill-opacity=".35"/>
+    <text x="0" y="-22" text-anchor="middle" fill="#fff" fill-opacity=".55" font-family="Montserrat,Arial,sans-serif" font-size="10" font-weight="800">N</text>
+  </g>
+
+  <text x="892" y="486" text-anchor="end" fill="#fff" fill-opacity=".28"
+        font-family="Montserrat,Arial,sans-serif" font-size="10.5">Traçado ilustrativo</text>
+</svg>
