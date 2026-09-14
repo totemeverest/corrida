@@ -92,6 +92,74 @@ service cloud.firestore {
       allow delete: if true;    // mas o botão de zerar limpa
     }
 
+    // ---------------- CUPONS (desconto percentual) ----------------
+    //
+    // Sem este bloco a coleção cai no catch-all abaixo e NENHUM cupom
+    // funciona — nem o painel, nem a inscrição.
+    //
+    // LIMITE CONHECIDO E ACEITO: o site não tem login. Nenhum firebase-auth
+    // é carregado, então request.auth é SEMPRE null e estas regras NÃO
+    // sabem quem é o organizador. O que elas garantem é a FORMA da escrita:
+    // ninguém inventa campo, ninguém mexe no percentual de um cupom que já
+    // existe, e ninguém altera o contador de qualquer jeito.
+    //
+    // O que continua possível para um visitante: criar um cupom novo com
+    // forma válida, ou ligar/desligar um existente. Isso foi avaliado e
+    // aceito para esta edição do evento — a confirmação de pagamento é
+    // manual, então um cupom forjado aparece no painel antes de virar vaga.
+    match /cupons/{codigo} {
+
+      function d()     { return request.resource.data; }
+      function antes() { return resource.data; }
+      function mudou() { return d().diff(antes()).affectedKeys(); }
+
+      // Documento fora desta forma é recusado na criação.
+      function formaDeCupom() {
+        return d().keys().hasOnly(['ativo','tipo','valor','limite','usados','validade','formasPermitidas','criadoEm'])
+            && d().keys().hasAll(['ativo','tipo','valor','limite','usados','formasPermitidas','criadoEm'])
+            && d().ativo is bool
+            && d().tipo == 'percentual'
+            && d().valor  is number && d().valor  >  0 && d().valor  <= 100
+            && d().limite is number && d().limite >= 1 && d().limite <= 2000
+            && d().usados is number
+            && d().criadoEm is number
+            && (!('validade' in d()) || d().validade == null || d().validade is number)
+            && d().formasPermitidas is list
+            && d().formasPermitidas.size() >= 1
+            && d().formasPermitidas.size() <= 2;
+      }
+
+      // Consumo e devolução: mexe SÓ no contador, de 1 em 1, e nunca sai da
+      // faixa 0..limite. É isto que impede alguém de mandar "usados: 0" e
+      // reciclar um cupom esgotado, ou "usados: 999999".
+      function passoDeContador() {
+        return mudou().hasOnly(['usados'])
+            && d().usados is number
+            && d().usados >= 0
+            && d().usados <= antes().limite
+            && (d().usados == antes().usados + 1 || d().usados == antes().usados - 1);
+      }
+
+      // Botão Ativar/Desativar do painel: mexe SÓ nesse campo.
+      function ligaDesliga() {
+        return mudou().hasOnly(['ativo']) && d().ativo is bool;
+      }
+
+      // O site precisa ler o cupom para calcular o desconto.
+      allow read: if true;
+
+      // Cupom nasce sempre zerado.
+      allow create: if formaDeCupom() && d().usados == 0;
+
+      // Percentual, limite, validade, tipo e criadoEm são IMUTÁVEIS depois
+      // de criados. Só o contador anda, e só de 1 em 1.
+      allow update: if passoDeContador() || ligaDesliga();
+
+      // Some só o que nunca foi usado: uma inscrição no histórico não pode
+      // ficar apontando para um cupom que deixou de existir.
+      allow delete: if resource.data.usados == 0;
+    }
+
     // ---------------- TUDO O MAIS: fechado ----------------
     match /{document=**} {
       allow read, write: if false;

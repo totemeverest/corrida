@@ -325,6 +325,17 @@ footer .fmeta{margin-top:10px}
 .gphoto.ph span{color:var(--muted);font-weight:700;font-size:13px;opacity:.6}
 #galTitulo{font-size:clamp(26px,5vw,44px);color:#fff}
 #galeria .sec-head p{color:var(--muted)}
+.cupom-box{margin-top:14px}
+.cupom-lab{display:block;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:7px}
+.cupom-linha{display:flex;gap:8px}
+.cupom-linha input{flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:#fff;font-family:'Montserrat';font-weight:700;font-size:14px;text-transform:uppercase}
+.cupom-linha input:disabled{opacity:.7}
+.cupom-btn{flex:0 0 auto;background:var(--amarelo);color:#2a1450;border:none;border-radius:10px;padding:12px 20px;font-weight:800;cursor:pointer;font-size:13px;text-transform:uppercase}
+.cupom-btn:disabled{opacity:.6;cursor:default}
+.cupom-msg{font-size:12.5px;margin-top:7px;line-height:1.45}
+.cupom-msg.bom{color:var(--ok)}
+.cupom-msg.ruim{color:var(--alerta)}
+.cupom-box.travado .cupom-linha{opacity:.45;pointer-events:none}
 .qr-wrap{text-align:center}
 #qrbox{display:inline-block;background:#fff;padding:16px;border-radius:16px;margin:14px auto 0}
 #qrbox img,#qrbox canvas{display:block;margin:0 auto}
@@ -1008,6 +1019,14 @@ footer .fmeta{margin-top:10px}
         <div class="pay" data-pay="Cartão" onclick="selPay(this)"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Cartão</div>
       </div>
       <div class="aviso-pag" id="avisoPag"></div>
+      <div class="cupom-box" id="cupomBox">
+        <label class="cupom-lab">Cupom de desconto</label>
+        <div class="cupom-linha">
+          <input id="fCupom" type="text" maxlength="24" placeholder="Digite o código" autocomplete="off" spellcheck="false">
+          <button type="button" class="cupom-btn" id="fCupomBtn" onclick="btnCupomSite()">Aplicar</button>
+        </div>
+        <div class="cupom-msg" id="fCupomMsg"></div>
+      </div>
       <p class="hint" style="color:var(--muted);font-size:13px;margin-top:6px">Depois de gerar a inscrição, a organização confirma o pagamento e sua vaga fica garantida.</p>
       <div class="nav-btns"><button class="btn btn-ghost" onclick="passo(2)">Voltar</button><button class="btn btn-cta grow" id="btnGerar" onclick="gerarInscricao()"><span>Gerar inscrição</span></button></div>
     </div>
@@ -1084,6 +1103,7 @@ footer .fmeta{margin-top:10px}
         <button class="adm-tab on" id="tabInscr" onclick="admAba('inscr')">Inscrições</button>
         <button class="adm-tab" id="tabBalcao" onclick="admAba('balcao')">Balcão</button>
         <button class="adm-tab" id="tabConfig" onclick="admAba('config')">Ajustes &amp; estoque</button>
+        <button class="adm-tab" id="tabCupons" onclick="admAba('cupons')">Cupons</button>
         <button class="adm-tab" id="tabWpp" onclick="admAba('wpp')">WhatsApp</button>
         <button class="adm-tab" id="tabAud" onclick="admAba('aud')">Auditoria</button>
         <button class="adm-tab" id="tabDivulg" onclick="admAba('divulg')">Divulgação (QR)</button>
@@ -1119,6 +1139,7 @@ footer .fmeta{margin-top:10px}
 
       <div id="admBalcao" style="display:none"></div>
       <div id="admConfig" style="display:none"></div>
+      <div id="admCupons" style="display:none"></div>
       <div id="admWpp" style="display:none"></div>
       <div id="admAud" style="display:none"></div>
       <div id="admDivulg" style="display:none"></div>
@@ -1270,7 +1291,7 @@ const CONFIG = {
 const MODO_DEMO = !CONFIG.firebase || String(CONFIG.firebase.apiKey).includes("COLE_");
 let fdb = null;
 if(!MODO_DEMO){ try{ firebase.initializeApp(CONFIG.firebase); fdb = firebase.firestore(); }catch(e){ console.warn("Firebase falhou, modo demo:",e); } }
-const LS_INSC="everest_inscricoes", LS_SET="everest_settings", LS_EV="everest_eventos";
+const LS_INSC="everest_inscricoes", LS_SET="everest_settings", LS_EV="everest_eventos", LS_CUP="everest_cupons";
 const DB = {
   async add(o){ if(fdb){const r=await fdb.collection("inscricoes").add(o);return r.id;} const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");o._id="L"+Date.now();a.push(o);localStorage.setItem(LS_INSC,JSON.stringify(a));return o._id; },
   async list(){ if(fdb){const s=await fdb.collection("inscricoes").orderBy("criadoEm","desc").get();return s.docs.map(d=>({_id:d.id,...d.data()}));} return JSON.parse(localStorage.getItem(LS_INSC)||"[]").sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0)); },
@@ -1287,7 +1308,9 @@ const DB = {
       return JSON.parse(localStorage.getItem(LS_INSC)||"[]").filter(i=>soDigitos(docDe(i))===alvo);
     }catch(e){ console.warn("checagem de duplicidade falhou:",e); return []; }
   },
-  async setStatus(id,status){ return this.update(id,{status}); },
+  /* DB.setStatus foi removido: ele trocava o status sem tocar no marcador
+     estoqueBaixado nem no estoque. Não tinha chamador, mas era uma armadilha
+     para quem viesse depois. Use DB.moverStatus(). */
   async evento(tipo){
     try{
       const reg={tipo, em:Date.now()};
@@ -1323,8 +1346,389 @@ const DB = {
     localStorage.removeItem(LS_EV);
   },
   async getSettings(){ if(fdb){const d=await fdb.collection("config").doc("settings").get();return d.exists?d.data():null;} return JSON.parse(localStorage.getItem(LS_SET)||"null"); },
-  async saveSettings(s){ if(fdb){await fdb.collection("config").doc("settings").set(s);return;} localStorage.setItem(LS_SET,JSON.stringify(s)); }
+
+  /* ATENÇÃO — SUBSTITUI O DOCUMENTO INTEIRO.
+     Só o "Apagar tudo e recomeçar" pode usar, porque ali reescrever tudo
+     é justamente o objetivo. Em qualquer outra gravação isso faria uma aba
+     antiga apagar o que outro aparelho acabou de salvar.
+     Para gravar configuração use patchSettings(); para estoque, moverStatus()
+     ou criarComEstoque() — nunca mexa em camiseta por fora deles. */
+  async substituirSettings(s){ if(fdb){await fdb.collection("config").doc("settings").set(s);return;} localStorage.setItem(LS_SET,JSON.stringify(s)); },
+
+  /* Grava SÓ os campos recebidos. O resto do documento fica intacto,
+     então alterações feitas em outro aparelho não são desfeitas. */
+  async patchSettings(campos){
+    if(!campos || !Object.keys(campos).length) return;
+    if(fdb){ await fdb.collection("config").doc("settings").set(campos,{merge:true}); return; }
+    const atual=JSON.parse(localStorage.getItem(LS_SET)||"null")||{};
+    localStorage.setItem(LS_SET, JSON.stringify(mesclar(atual,campos)));
+  },
+
+  /* Lê só o mapa de estoque, para a tela ficar igual ao servidor. */
+  async estoqueAtual(){
+    if(fdb){ const d=await fdb.collection("config").doc("settings").get(); return (d.exists&&d.data().camiseta)||null; }
+    const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{}; return s.camiseta||null;
+  },
+
+  /* ---------------------------------------------------------------------
+     MOVER STATUS + ESTOQUE, NA MESMA TRANSAÇÃO.
+
+     O marcador `estoqueBaixado` guarda NA PRÓPRIA INSCRIÇÃO se aquela
+     camiseta já foi descontada. É ele — não o status — que decide se há
+     algo a fazer. Por isso repetir a operação (duplo clique, recarregar a
+     página, tentar de novo depois de um erro) é seguro: a transação relê o
+     marcador e calcula delta 0.
+
+     Inscrição antiga não tem o campo. Nesse caso vale `status==='confirmado'`,
+     que é exatamente o que o código antigo fazia ao confirmar. Nenhuma
+     inscrição é migrada, nenhum estoque histórico é recalculado — o campo
+     passa a existir só quando aquela inscrição for mexida.
+     --------------------------------------------------------------------- */
+  async moverStatus(id, novoStatus){
+    const decidir = (ins) => {
+      const antes = ins.status;
+      const tam = ins.camiseta;
+      const valido = !!(tam && CONFIG.camisetas.some(c=>c.tam===tam));
+      const baixado = (typeof ins.estoqueBaixado==='boolean') ? ins.estoqueBaixado : (antes==='confirmado');
+      const deve = valido && novoStatus==='confirmado';
+      // Tamanho que não existe em CONFIG.camisetas NÃO mexe em estoque, ponto.
+      // Sem essa guarda, uma inscrição com tamanho inválido devolvia +1 num campo
+      // fantasma e o marcador não era atualizado — devolvendo de novo a cada clique.
+      const delta = !valido ? 0
+                  : (deve && !baixado) ? -1
+                  : (!deve && baixado) ?  1 : 0;
+      const p = { status:novoStatus };
+      if(novoStatus==='confirmado' && antes!=='confirmado') p.confirmadoEm=Date.now();
+      if(valido) p.estoqueBaixado = deve;
+      if(antes==='confirmado' && novoStatus!=='confirmado' && ins.kitRetirado){ p.kitRetirado=false; p.kitRetiradoEm=null; }
+
+      /* CUPOM — mesmo padrão do estoque, com marcador próprio.
+         `cupomConsumido` diz se o uso desta inscrição está contado no cupom.
+         Cancelar devolve o uso; sair de cancelado consome de novo.
+         Inscrição sem cupom (inclusive toda inscrição antiga) fica de fora:
+         `temCupom` é falso, delta 0, nenhum campo novo é gravado. */
+      const temCupom = !!ins.cupom;
+      const consumido = (typeof ins.cupomConsumido==='boolean') ? ins.cupomConsumido : false;
+      const deveCupom = temCupom && novoStatus!=='cancelado';
+      const deltaCupom = (deveCupom && !consumido) ? 1 : (!deveCupom && consumido) ? -1 : 0;
+      if(temCupom) p.cupomConsumido = deveCupom;
+
+      return { antes, tam, delta, patch:p, cupom:(ins.cupom||null), deltaCupom, forma:(ins.pagamento||'PIX') };
+    };
+    if(fdb){
+      const refI=fdb.collection("inscricoes").doc(id);
+      const refS=fdb.collection("config").doc("settings");
+      return await fdb.runTransaction(async t=>{
+        /* TODAS as leituras primeiro — exigência do Firestore. */
+        const d=await t.get(refI);
+        if(!d.exists) throw new Error("inscrição não encontrada");
+        const r=decidir(d.data());
+        let refC=null, cup=null;
+        if(r.deltaCupom){ refC=fdb.collection("cupons").doc(r.cupom);
+                          const dC=await t.get(refC); cup=dC.exists?dC.data():null; }
+        /* --- daqui para baixo, só gravações --- */
+        if(r.deltaCupom>0){
+          const av=avaliarCupom(cup, r.cupom, 0, r.forma);   // revalida limite, ativo e validade
+          if(!av.valido){ const e=new Error("Cupom "+r.cupom+": "+av.motivo); e.cupomInvalido=true; throw e; }
+          t.update(refC, { usados: Number(cup.usados||0)+1 });
+        } else if(r.deltaCupom<0 && cup){
+          t.update(refC, { usados: Math.max(0, Number(cup.usados||0)-1) });   // nunca negativo
+        }
+        t.update(refI, r.patch);
+        if(r.delta) t.update(refS, {["camiseta."+r.tam]: firebase.firestore.FieldValue.increment(r.delta)});
+        return r;
+      });
+    }
+    const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    const ins=a.find(x=>x._id===id); if(!ins) throw new Error("inscrição não encontrada");
+    const r=decidir(ins);
+    if(r.deltaCupom){
+      const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}"); const cup=mapa[r.cupom]||null;
+      if(r.deltaCupom>0){
+        const av=avaliarCupom(cup, r.cupom, 0, r.forma);
+        if(!av.valido){ const e=new Error("Cupom "+r.cupom+": "+av.motivo); e.cupomInvalido=true; throw e; }
+        cup.usados=Number(cup.usados||0)+1;
+      } else if(cup){ cup.usados=Math.max(0, Number(cup.usados||0)-1); }
+      localStorage.setItem(LS_CUP, JSON.stringify(mapa));
+    }
+    Object.assign(ins,r.patch); localStorage.setItem(LS_INSC,JSON.stringify(a));
+    if(r.delta){
+      const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{};
+      s.camiseta=s.camiseta||{}; s.camiseta[r.tam]=Number(s.camiseta[r.tam]||0)+r.delta;
+      localStorage.setItem(LS_SET,JSON.stringify(s));
+    }
+    return r;
+  },
+
+  /* ---------------- CUPONS ---------------- */
+  async getCupom(cod){
+    if(!cod) return null;
+    if(fdb){ const d=await fdb.collection("cupons").doc(cod).get(); return d.exists?d.data():null; }
+    return (JSON.parse(localStorage.getItem(LS_CUP)||"{}"))[cod]||null;
+  },
+  async listCupons(){
+    if(fdb){ const s=await fdb.collection("cupons").get(); return s.docs.map(d=>({codigo:d.id,...d.data()})); }
+    const m=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
+    return Object.keys(m).map(k=>({codigo:k,...m[k]}));
+  },
+  /* merge: nunca substitui o documento inteiro, então `usados` de um cupom
+     em uso jamais é zerado por uma edição de percentual ou limite. */
+  async salvarCupom(cod, dados){
+    if(fdb){ await fdb.collection("cupons").doc(cod).set(dados,{merge:true}); return; }
+    const m=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
+    m[cod]=Object.assign(m[cod]||{}, dados);
+    localStorage.setItem(LS_CUP, JSON.stringify(m));
+  },
+  async apagarCupom(cod){
+    if(fdb){ await fdb.collection("cupons").doc(cod).delete(); return; }
+    const m=JSON.parse(localStorage.getItem(LS_CUP)||"{}"); delete m[cod];
+    localStorage.setItem(LS_CUP, JSON.stringify(m));
+  },
+
+  /* ---------------------------------------------------------------------
+     CRIAR INSCRIÇÃO CONSUMINDO 1 USO DO CUPOM — TUDO NUMA TRANSAÇÃO.
+
+     Lê o cupom, valida, cria a inscrição e consome o uso atomicamente.
+     Se dois clientes disputarem o último uso, o Firestore reexecuta a
+     transação do segundo, que relê `usados` e é recusado. `usados` nunca
+     passa de `limite`.
+
+     increment() sozinho NÃO resolveria: ele soma de forma atômica, mas não
+     sabe recusar — os dois passariam e o contador estouraria o limite.
+     --------------------------------------------------------------------- */
+  async criarComCupom(insc, baixarTam, codigo, forma, brutoCent){
+    const cod=normCupom(codigo);
+    const montar=(cup)=>{
+      const av=avaliarCupom(cup, cod, brutoCent, forma);
+      if(!av.valido){ const e=new Error(av.motivo); e.cupomInvalido=true; throw e; }
+      return { av, doc: Object.assign({}, insc, {
+        cupom:cod, cupomPercentual:av.percentual, cupomDesconto:av.desconto,
+        cupomConsumido:true, valor:av.valorFinal }) };
+    };
+    if(fdb){
+      const refC=fdb.collection("cupons").doc(cod);
+      const refI=fdb.collection("inscricoes").doc();
+      const refS=fdb.collection("config").doc("settings");
+      const r=await fdb.runTransaction(async t=>{
+        const dC=await t.get(refC);
+        const cup=dC.exists?dC.data():null;
+        const m=montar(cup);
+        t.set(refI, m.doc);
+        t.update(refC, { usados: Number(cup.usados||0)+1 });   // valor explícito: o limite fica provado
+        if(baixarTam) t.update(refS, {["camiseta."+baixarTam]: firebase.firestore.FieldValue.increment(-1)});
+        return m;
+      });
+      return { id:refI.id, doc:r.doc, cupom:r.av };
+    }
+    const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
+    const m=montar(mapa[cod]||null);
+    mapa[cod].usados=Number(mapa[cod].usados||0)+1;
+    localStorage.setItem(LS_CUP, JSON.stringify(mapa));
+    const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    m.doc._id="L"+Date.now(); a.push(m.doc); localStorage.setItem(LS_INSC,JSON.stringify(a));
+    if(baixarTam){
+      const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{};
+      s.camiseta=s.camiseta||{}; s.camiseta[baixarTam]=Number(s.camiseta[baixarTam]||0)-1;
+      localStorage.setItem(LS_SET,JSON.stringify(s));
+    }
+    return { id:m.doc._id, doc:m.doc, cupom:m.av };
+  },
+
+  /* ---------------------------------------------------------------------
+     CORRIGIR O CUPOM DE UMA INSCRIÇÃO QUE AINDA NÃO FOI PAGA.
+
+     Só mexe em inscrição `pendente`. Confirmada não muda — o dinheiro já
+     entrou e o caixa já contou. Cancelada também não: o uso dela já foi
+     devolvido, e quem cuida de reabrir é o moverStatus().
+
+     Aplicar, trocar e remover acontecem DENTRO de uma transação: ou a
+     inscrição e os dois contadores mudam juntos, ou nada muda. Numa troca
+     A→B, se B estiver esgotado a inscrição continua com A intacta.
+     --------------------------------------------------------------------- */
+  async aplicarCupomNaInscricao(id, codigo){
+    const cod = normCupom(codigo);
+    if(!cod) throw erroCupom('Digite o código do cupom.');
+    if(!cupomFormatoOk(cod)) throw erroCupom('Código inválido — use letras e números.');
+
+    const preparar = (ins) => {
+      if(!ins) throw erroCupom('Inscrição não encontrada.');
+      if(ins.status==='confirmado') throw erroCupom('Esta inscrição já foi confirmada. O cupom não pode ser alterado.');
+      if(ins.status!=='pendente')   throw erroCupom('Só dá para mexer no cupom enquanto a inscrição está aguardando pagamento.');
+      if(ins.pagamento==='Cartão')  throw erroCupom('Cupom não pode ser aplicado a pagamento por cartão.');
+      if(Number(ins.desconto||0)>0) throw erroCupom('Esta inscrição tem desconto manual. Cupom e desconto manual não se somam — corrija o desconto primeiro.');
+      if(ins.cupom===cod && ins.cupomConsumido===true) throw erroCupom('Este cupom já está aplicado nesta inscrição.');
+      // O valor cheio vem da PRÓPRIA inscrição. O lote de hoje não mexe em inscrição antiga.
+      const brutoCent = centDe(ins.valorCheio!=null ? ins.valorCheio : ins.valor);
+      return { brutoCent, forma:(ins.pagamento||'PIX'),
+               antigo:(ins.cupomConsumido===true && ins.cupom) ? ins.cupom : null };
+    };
+    const montarPatch = (av, brutoCent) => ({
+      cupom:cod, cupomPercentual:av.percentual, cupomDesconto:av.desconto,
+      cupomConsumido:true, valorCheio:reaisDe(brutoCent), valor:av.valorFinal });
+
+    if(fdb){
+      const refI=fdb.collection("inscricoes").doc(id);
+      return await fdb.runTransaction(async t=>{
+        const dI=await t.get(refI);
+        const ins=dI.exists?dI.data():null;
+        const prep=preparar(ins);
+        const refNovo=fdb.collection("cupons").doc(cod);
+        const dNovo=await t.get(refNovo);
+        let refAnt=null, antDoc=null;
+        if(prep.antigo && prep.antigo!==cod){
+          refAnt=fdb.collection("cupons").doc(prep.antigo);
+          const dA=await t.get(refAnt); antDoc=dA.exists?dA.data():null;
+        }
+        /* --- fim das leituras; daqui para baixo só gravações --- */
+        const av=avaliarCupom(dNovo.exists?dNovo.data():null, cod, prep.brutoCent, prep.forma);
+        if(!av.valido) throw erroCupom(av.motivo);
+        if(refAnt && antDoc) t.update(refAnt, { usados: Math.max(0, Number(antDoc.usados||0)-1) });
+        t.update(refNovo, { usados: Number(dNovo.data().usados||0)+1 });
+        const patch=montarPatch(av, prep.brutoCent);
+        t.update(refI, patch);
+        return { patch, av, trocouDe:prep.antigo };
+      });
+    }
+    const arr=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    const ins=arr.find(x=>x._id===id);
+    const prep=preparar(ins);
+    const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
+    const av=avaliarCupom(mapa[cod]||null, cod, prep.brutoCent, prep.forma);
+    if(!av.valido) throw erroCupom(av.motivo);
+    if(prep.antigo && prep.antigo!==cod && mapa[prep.antigo])
+      mapa[prep.antigo].usados=Math.max(0,Number(mapa[prep.antigo].usados||0)-1);
+    mapa[cod].usados=Number(mapa[cod].usados||0)+1;
+    localStorage.setItem(LS_CUP,JSON.stringify(mapa));
+    const patch=montarPatch(av, prep.brutoCent);
+    Object.assign(ins,patch); localStorage.setItem(LS_INSC,JSON.stringify(arr));
+    return { patch, av, trocouDe:prep.antigo };
+  },
+
+  /* Tira o cupom e devolve o uso. `valorCheio` fica como histórico. */
+  async removerCupomDaInscricao(id){
+    const preparar = (ins) => {
+      if(!ins) throw erroCupom('Inscrição não encontrada.');
+      if(ins.status==='confirmado') throw erroCupom('Esta inscrição já foi confirmada. O cupom não pode ser alterado.');
+      if(ins.status!=='pendente')   throw erroCupom('Só dá para mexer no cupom enquanto a inscrição está aguardando pagamento.');
+      if(!ins.cupom) throw erroCupom('Esta inscrição não tem cupom.');
+      return { codigo:ins.cupom, devolver:(ins.cupomConsumido===true),
+               cheio:(ins.valorCheio!=null ? Number(ins.valorCheio) : Number(ins.valor||0)) };
+    };
+    const patchDe = (cheio) => ({ cupom:null, cupomPercentual:null, cupomDesconto:0,
+                                  cupomConsumido:false, valor:cheio });
+    if(fdb){
+      const refI=fdb.collection("inscricoes").doc(id);
+      return await fdb.runTransaction(async t=>{
+        const dI=await t.get(refI);
+        const prep=preparar(dI.exists?dI.data():null);
+        let refC=null, cupDoc=null;
+        if(prep.devolver){ refC=fdb.collection("cupons").doc(prep.codigo);
+                           const dC=await t.get(refC); cupDoc=dC.exists?dC.data():null; }
+        /* --- fim das leituras --- */
+        if(prep.devolver && cupDoc) t.update(refC, { usados: Math.max(0, Number(cupDoc.usados||0)-1) });
+        const patch=patchDe(prep.cheio);
+        t.update(refI, patch);
+        return { patch, codigo:prep.codigo };
+      });
+    }
+    const arr=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    const ins=arr.find(x=>x._id===id);
+    const prep=preparar(ins);
+    if(prep.devolver){
+      const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
+      if(mapa[prep.codigo]) mapa[prep.codigo].usados=Math.max(0,Number(mapa[prep.codigo].usados||0)-1);
+      localStorage.setItem(LS_CUP,JSON.stringify(mapa));
+    }
+    const patch=patchDe(prep.cheio);
+    Object.assign(ins,patch); localStorage.setItem(LS_INSC,JSON.stringify(arr));
+    return { patch, codigo:prep.codigo };
+  },
+
+  /* Cria a inscrição e baixa o estoque de uma vez só (venda no balcão já paga).
+     Lote atômico: ou nascem os dois, ou não nasce nenhum — acaba a janela em
+     que a inscrição existia mas o estoque não tinha baixado. */
+  async criarComEstoque(insc, baixarTam){
+    if(fdb){
+      const refI=fdb.collection("inscricoes").doc();   // gera o ID sem gravar
+      const lote=fdb.batch();
+      lote.set(refI, insc);
+      if(baixarTam) lote.update(fdb.collection("config").doc("settings"),
+                                {["camiseta."+baixarTam]: firebase.firestore.FieldValue.increment(-1)});
+      await lote.commit();
+      return refI.id;
+    }
+    const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    insc._id="L"+Date.now(); a.push(insc); localStorage.setItem(LS_INSC,JSON.stringify(a));
+    if(baixarTam){
+      const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{};
+      s.camiseta=s.camiseta||{}; s.camiseta[baixarTam]=Number(s.camiseta[baixarTam]||0)-1;
+      localStorage.setItem(LS_SET,JSON.stringify(s));
+    }
+    return insc._id;
+  }
 };
+
+/* ═══════════════════════ CUPONS — REGRA ÚNICA ═══════════════════════
+   Dinheiro é contado em CENTAVOS o tempo todo; só vira reais na hora de
+   exibir ou gravar, numa divisão só. Assim 10% de 69,90 dá exatamente
+   6,99 — nunca 6,989999999999999. */
+const centDe  = v => Math.round(Number(v||0)*100);
+const reaisDe = c => Math.round(Number(c||0))/100;
+
+/* Erro de cupom que a interface reconhece e mostra com texto próprio. */
+function erroCupom(msg){ const e=new Error(msg); e.cupomInvalido=true; return e; }
+
+/*  everest10  ·  Everest10  ·  " EVEREST10 "  →  EVEREST10  */
+function normCupom(s){ return String(s||'').trim().toUpperCase().replace(/\s+/g,''); }
+function cupomFormatoOk(c){ return /^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(c); }
+
+/* ÚNICO lugar do sistema que calcula desconto de cupom.
+   Site, balcão e as transações chamam esta função — não existe uma segunda
+   conta escondida em outro canto. Recebe o documento do cupom já lido, para
+   poder ser usada tanto na interface quanto DENTRO de uma transação. */
+function avaliarCupom(cup, codigo, brutoCent, forma){
+  const bc = Math.max(0, Number(brutoCent)||0);
+  const nao = motivo => ({ valido:false, codigo, motivo, percentual:0,
+                           descontoCent:0, desconto:0,
+                           valorFinalCent:bc, valorFinal:reaisDe(bc) });
+  if(forma==='Cartão')  return nao('Cupom não disponível para pagamento com cartão.');
+  if(!cup)              return nao('Cupom não encontrado.');
+  if(cup.ativo===false) return nao('Este cupom está desativado.');
+  if(cup.validade && Date.now() > Number(cup.validade)) return nao('Este cupom venceu.');
+  const permitidas = (Array.isArray(cup.formasPermitidas) && cup.formasPermitidas.length)
+                   ? cup.formasPermitidas : ['PIX','Dinheiro'];
+  if(!permitidas.includes(forma)) return nao('Este cupom não vale para pagamento em '+forma+'.');
+  const pct = Number(cup.valor);
+  if(!(pct > 0) || pct > 100) return nao('O percentual deste cupom é inválido.');
+  // Não existe cupom ilimitado: limite mínimo é 1, igual à regra do Firestore.
+  const limite = Number(cup.limite), usados = Number(cup.usados||0);
+  if(!(limite >= 1)) return nao('Este cupom está sem limite de usos configurado.');
+  if(usados >= limite) return nao('Este cupom atingiu o limite de utilizações.');
+  let dCent = Math.round(bc * pct / 100);
+  if(dCent > bc) dCent = bc;          // desconto nunca maior que o bruto
+  if(dCent < 0)  dCent = 0;
+  const fCent = Math.max(0, bc - dCent);   // valor final nunca negativo
+  return { valido:true, codigo, motivo:'', percentual:pct,
+           descontoCent:dCent, desconto:reaisDe(dCent),
+           valorFinalCent:fCent, valorFinal:reaisDe(fCent) };
+}
+
+/* Lê o cupom no banco e avalia — usada pela interface (site e balcão).
+   A transação de criação repete a avaliação com o dado fresco, então o que
+   a tela mostra é sugestão; quem manda é a transação. */
+async function aplicarCupom(codigo, bruto, forma){
+  const cod = normCupom(codigo), bc = centDe(bruto);
+  if(!cod) return avaliarCupom(null, cod, bc, forma);
+  if(!cupomFormatoOk(cod)) return { valido:false, codigo:cod, percentual:0,
+      motivo:'Código inválido — use letras e números.', descontoCent:0, desconto:0,
+      valorFinalCent:bc, valorFinal:reaisDe(bc) };
+  let cup=null;
+  try{ cup = await DB.getCupom(cod); }
+  catch(e){ console.error(e); return { valido:false, codigo:cod, percentual:0,
+      motivo:'Não consegui verificar o cupom agora. Tente de novo.', descontoCent:0, desconto:0,
+      valorFinalCent:bc, valorFinal:reaisDe(bc) }; }
+  return avaliarCupom(cup, cod, bc, forma);
+}
 
 /* ===================== SETTINGS (preços/estoque/kit) ===================== */
 let ST=null;
@@ -1335,14 +1739,51 @@ function seedSettings(){
   CONFIG.kit.forEach((k,i)=>{s.kit[i]={disp:true,selo:""};});
   return s;
 }
-async function loadSettings(){
-  ST=await DB.getSettings();
-  if(!ST||!ST.precos||ST.versao!==CONFIG.settingsVersao){ ST=seedSettings(); await DB.saveSettings(ST); }
-  else{ // completa chaves novas se o CONFIG mudou
-    CONFIG.distancias.forEach(d=>{ if(ST.precos[d.id]==null)ST.precos[d.id]=d.preco; if(!(d.id in ST.precoAntigo))ST.precoAntigo[d.id]=null; if(!(d.id in ST.selo))ST.selo[d.id]=""; });
-    CONFIG.camisetas.forEach(c=>{ if(ST.camiseta[c.tam]==null)ST.camiseta[c.tam]=c.estoque; });
-    CONFIG.kit.forEach((k,i)=>{ if(!ST.kit[i])ST.kit[i]={disp:true,selo:""}; });
-  }
+/* Junta "novo" dentro de "alvo" sem apagar o que já existe (usado no modo demo). */
+function mesclar(alvo,novo){
+  Object.keys(novo||{}).forEach(k=>{
+    const v=novo[k];
+    if(v && typeof v==='object' && !Array.isArray(v)){
+      const base=(alvo[k] && typeof alvo[k]==='object' && !Array.isArray(alvo[k]))?alvo[k]:{};
+      alvo[k]=mesclar(base,v);
+    } else alvo[k]=v;
+  });
+  return alvo;
+}
+
+/* MIGRAÇÃO NÃO DESTRUTIVA.
+   Preenche apenas o que ESTÁ FALTANDO no documento. Nunca substitui um valor
+   já gravado — lote ativo, preços, estoque e kit existentes são preservados,
+   inclusive quando a versão do código é diferente da versão do banco.
+   Devolve o patch com os campos ausentes ({} = não há nada a gravar). */
+function completarSettings(s){
+  const patch={};
+  const por=(raiz,chave,valor)=>{ (patch[raiz]=patch[raiz]||{})[chave]=valor; s[raiz][chave]=valor; };
+  s.precos=s.precos||{}; s.precoAntigo=s.precoAntigo||{}; s.selo=s.selo||{};
+  s.camiseta=s.camiseta||{}; s.kit=s.kit||{};
+  CONFIG.distancias.forEach(d=>{
+    if(s.precos[d.id]==null) por('precos',d.id,d.preco);
+    if(!(d.id in s.precoAntigo)) por('precoAntigo',d.id,d.precoAntigo||null);
+    if(!(d.id in s.selo)) por('selo',d.id,d.selo||"");
+  });
+  CONFIG.camisetas.forEach(c=>{ if(s.camiseta[c.tam]==null) por('camiseta',c.tam,c.estoque); });
+  CONFIG.kit.forEach((k,i)=>{ if(!s.kit[i]) por('kit',i,{disp:true,selo:""}); });
+  if(!Array.isArray(s.lotes)||!s.lotes.length){ s.lotes=CONFIG.lotes.map(l=>({...l})); patch.lotes=s.lotes; }
+  if(s.loteAtivo==null){ s.loteAtivo=CONFIG.loteAtivo; patch.loteAtivo=s.loteAtivo; }
+  if(s.versao!==CONFIG.settingsVersao){ s.versao=CONFIG.settingsVersao; patch.versao=CONFIG.settingsVersao; }
+  return patch;
+}
+
+/* podeGravar=true SÓ no painel. O visitante comum lê, monta o ST em memória
+   e não escreve nada — abrir a página nunca reconfigura o site. */
+async function loadSettings(podeGravar){
+  const doc=await DB.getSettings();
+  const existe = !!(doc && typeof doc==='object' && (doc.lotes||doc.precos||doc.camiseta));
+  ST = existe ? doc : seedSettings();
+  const patch = existe ? completarSettings(ST) : null;
+  if(!podeGravar) return;                                  // visitante: somente leitura
+  if(!existe){ await DB.substituirSettings(ST); return; }   // banco vazio: cria o documento
+  if(Object.keys(patch).length) await DB.patchSettings(patch);
 }
 const loteAtual = () => (ST&&ST.lotes&&ST.lotes.length)?ST.lotes[Math.min(ST.loteAtivo||0,ST.lotes.length-1)]:null;
 const precoDe = id => { const l=loteAtual(); if(l) return Number(l.preco); const d=CONFIG.distancias.find(x=>x.id===id); return Number((ST&&ST.precos&&ST.precos[id])??(d?d.preco:0)); };
@@ -1641,6 +2082,8 @@ function renderConsulta(lista, termo){
       <div class="cons-linhas">
         <div><span>Distância</span><b>${esc(i.distancia||'—')}</b></div>
         <div><span>Camiseta</span><b>${esc(i.camiseta||'—')}</b></div>
+        ${i.cupom?`<div><span>Valor original</span><b style="text-decoration:line-through;opacity:.75">${BRL(i.valorCheio||((i.valor||0)+(i.cupomDesconto||0)))}</b></div>
+        <div><span>Cupom ${esc(i.cupom)} (${i.cupomPercentual||0}%)</span><b style="color:var(--ok)">− ${BRL(i.cupomDesconto||0)}</b></div>`:''}
         <div><span>Valor</span><b>${BRL(i.valor||0)}</b></div>
         <div><span>Pagamento</span><b>${esc(i.pagamento||'—')}</b></div>
       </div>
@@ -1699,7 +2142,7 @@ function ligarLightbox(){
 }
 
 /* ===================== INSCRIÇÃO ===================== */
-let sel={ distId:null, camiseta:null, pay:"PIX" };
+let sel={ distId:null, camiseta:null, pay:"PIX", cupom:null };
 
 function abrirInscricao(distId){
   if(!ST){ toast("Só um instante, carregando..."); return; }
@@ -1714,6 +2157,7 @@ function abrirInscricao(distId){
       <div class="pd">${d.desc||""}</div></div>`;}).join("");
   renderSizes();
   sel.pay="PIX"; document.querySelectorAll('.pay').forEach(p=>p.classList.toggle('sel',p.dataset.pay==='PIX')); avisoPag();
+  limparCupomSite(''); atualizaCupomUI();   // cada inscrição começa sem cupom
   if(el('ovConsulta').classList.contains('open')) el('ovConsulta').classList.remove('open');
   irPasso(1); abrirOverlay('ovInscricao');
 }
@@ -1725,7 +2169,54 @@ function renderSizes(){
 }
 function selTam(t){ if(restanteTam(t)<=0)return; sel.camiseta=t; document.querySelectorAll('#sizeGrid .size').forEach(s=>s.classList.remove('sel')); [...document.querySelectorAll('#sizeGrid .size')].find(s=>s.querySelector('b').textContent===t).classList.add('sel'); }
 function selDist(id){ sel.distId=id; document.querySelectorAll('#pickGrid .pick').forEach(p=>p.classList.toggle('sel',p.dataset.id===id)); }
-function selPay(node){ sel.pay=node.dataset.pay; document.querySelectorAll('.pay').forEach(p=>p.classList.remove('sel')); node.classList.add('sel'); avisoPag(); }
+function selPay(node){
+  sel.pay=node.dataset.pay;
+  document.querySelectorAll('.pay').forEach(p=>p.classList.remove('sel')); node.classList.add('sel');
+  // Cartão paga por link pré-gerado com o valor dentro da URL: cupom não cabe.
+  if(sel.pay==='Cartão' && sel.cupom) limparCupomSite('Cupom removido: não vale para pagamento com cartão.');
+  atualizaCupomUI(); avisoPag(); renderResumo();
+}
+
+/* ---- CUPOM no site ---- */
+function cupomCalc(brutoCent){
+  if(!sel.cupom) return { descontoCent:0, finalCent:brutoCent };
+  let d=Math.round(brutoCent*Number(sel.cupom.percentual)/100);
+  if(d>brutoCent)d=brutoCent; if(d<0)d=0;
+  return { descontoCent:d, finalCent:Math.max(0,brutoCent-d) };
+}
+function limparCupomSite(msg){
+  sel.cupom=null;
+  const c=el('fCupom'); if(c){ c.value=''; c.disabled=false; }
+  const m=el('fCupomMsg'); if(m){ m.textContent=msg||''; m.className='cupom-msg'+(msg?' ruim':''); }
+  const b=el('fCupomBtn'); if(b) b.textContent='Aplicar';
+}
+function atualizaCupomUI(){
+  const box=el('cupomBox'); if(!box) return;
+  const cartao = sel.pay==='Cartão';
+  box.classList.toggle('travado', cartao);
+  const m=el('fCupomMsg');
+  if(cartao){ if(m && !m.textContent) { m.textContent='Cupom não disponível para pagamento com cartão.'; m.className='cupom-msg ruim'; } }
+  else if(m && m.className==='cupom-msg ruim' && /cartão/i.test(m.textContent) && !sel.cupom){ m.textContent=''; m.className='cupom-msg'; }
+}
+async function btnCupomSite(){
+  const campo=el('fCupom'), msg=el('fCupomMsg'), btn=el('fCupomBtn');
+  if(sel.cupom){ limparCupomSite(''); renderResumo(); return; }          // botão vira "Remover"
+  if(sel.pay==='Cartão'){ msg.textContent='Cupom não disponível para pagamento com cartão.'; msg.className='cupom-msg ruim'; return; }
+  const cod=normCupom(campo.value);
+  if(!cod){ msg.textContent='Digite o código do cupom.'; msg.className='cupom-msg ruim'; return; }
+  btn.disabled=true;
+  try{
+    const d=distSel(), bruto=precoDe(d.id)+(CONFIG.taxaServico||0);
+    const r=await aplicarCupom(cod, bruto, sel.pay);
+    if(!r.valido){ sel.cupom=null; msg.textContent=r.motivo; msg.className='cupom-msg ruim'; campo.disabled=false; btn.textContent='Aplicar'; }
+    else{
+      sel.cupom={ codigo:r.codigo, percentual:r.percentual };
+      campo.value=r.codigo; campo.disabled=true; btn.textContent='Remover';
+      msg.innerHTML='Cupom <b>'+esc(r.codigo)+'</b> aplicado — '+r.percentual+'% de desconto.';
+      msg.className='cupom-msg bom';
+    }
+  } finally { btn.disabled=false; renderResumo(); }
+}
 function avisoPag(){
   const a=el('avisoPag'); if(!a) return; let t="";
   if(sel.pay==='Cartão') t = linkCartaoAtual()
@@ -1790,7 +2281,10 @@ async function passo(n){
 }
 function distSel(){ return CONFIG.distancias.find(d=>d.id===sel.distId); }
 function renderResumo(){
-  const d=distSel(), p=precoDe(d.id), tx=CONFIG.taxaServico||0, total=p+tx;
+  const d=distSel(); if(!d) return;
+  const p=precoDe(d.id), tx=CONFIG.taxaServico||0;
+  const brutoCent=centDe(p)+centDe(tx);
+  const c=cupomCalc(brutoCent);
   el('resumoBox').innerHTML=`
     <div class="rl"><span>Participante</span><b>${el('fNome').value}</b></div>
     <div class="rl"><span>${el('fDocTipo').value}</span><b>${el('fDoc').value}</b></div>
@@ -1798,7 +2292,8 @@ function renderResumo(){
     <div class="rl"><span>Camiseta</span><b>${sel.camiseta}</b></div>
     <div class="rl"><span>Inscrição</span><b>${BRL(p)}</b></div>
     ${tx?`<div class="rl"><span>Taxa</span><b>${BRL(tx)}</b></div>`:""}
-    <div class="rl total"><span>Total</span><b>${BRL(total)}</b></div>`;
+    ${sel.cupom?`<div class="rl"><span>Cupom ${esc(sel.cupom.codigo)} (${sel.cupom.percentual}%)</span><b style="color:var(--ok)">− ${BRL(reaisDe(c.descontoCent))}</b></div>`:""}
+    <div class="rl total"><span>Total</span><b>${BRL(reaisDe(c.finalCent))}</b></div>`;
 }
 function cpfValido(v){
   const c=soDigitos(v);
@@ -1825,16 +2320,30 @@ function protocolo(){ return "EVR-"+Date.now().toString(36).toUpperCase().slice(
 async function gerarInscricao(){
   if(!sel.camiseta){ toast("Escolha o tamanho da camiseta"); irPasso(1); return; }
   if(restanteTam(sel.camiseta)<=0){ toast("Esse tamanho acabou. Escolha outro."); irPasso(1); renderSizes(); return; }
-  const d=distSel(), p=precoDe(d.id), tx=CONFIG.taxaServico||0, total=p+tx, proto=protocolo();
+  const d=distSel(), p=precoDe(d.id), tx=CONFIG.taxaServico||0, proto=protocolo();
+  const brutoCent=centDe(p)+centDe(tx);
+  // Cartão nunca sai daqui com cupom: o link do lote cobra o valor cheio.
+  if(sel.pay==='Cartão' && sel.cupom) limparCupomSite('Cupom removido: não vale para cartão.');
+  const cupomCod = sel.cupom ? sel.cupom.codigo : null;
+  const calc = cupomCalc(brutoCent);
+  const total = reaisDe(calc.finalCent);
   const insc={ protocolo:proto, status:"pendente", distanciaId:d.id, distancia:d.nome, camiseta:sel.camiseta,
     nome:el('fNome').value.trim(), docTipo:el('fDocTipo').value, documento:el('fDoc').value.trim(), cpf:(el('fDocTipo').value==='CPF'?el('fDoc').value.trim():''),
     nascimento:el('fNasc').value, genero:el('fGenero').value,
     celular:el('fCel').value.trim(), email:el('fEmail').value.trim(), cidade:el('fCidade').value.trim(),
     pagamento:sel.pay, valor:total, evento:CONFIG.evento.nome, origem:'site', criadoEm:Date.now(),
-    aceitaWpp: el('fOptin').checked };
+    aceitaWpp: el('fOptin').checked,
+    estoqueBaixado:false };   // nasce pendente: nenhuma camiseta foi descontada ainda
+  if(cupomCod) insc.valorCheio = reaisDe(brutoCent);
   const btn=el('btnGerar'); btn.disabled=true; btn.innerHTML="<span>Salvando...</span>";
   try{
-    await DB.add(insc);
+    if(cupomCod){
+      // Transação: valida o cupom e consome 1 uso junto com a criação.
+      const r = await DB.criarComCupom(insc, null, cupomCod, insc.pagamento, brutoCent);
+      Object.assign(insc, r.doc);
+    } else {
+      await DB.add(insc);
+    }
     DB.evento("gerou_inscricao");
     el('sucProto').textContent=proto;
     const ehPix = insc.pagamento==='PIX';
@@ -1864,10 +2373,20 @@ async function gerarInscricao(){
       : '<li>Vá até a recepção da Everest e faça o pagamento.</li><li>Informe o seu <b>protocolo</b> no atendimento.</li><li>A organização confirma e sua vaga + kit ficam garantidos.</li>';
     el('sucWppTxt').textContent = (ehPix || (ehCartao&&lkCartao)) ? 'Enviar comprovante no WhatsApp' : ehCartao ? 'Pedir link de pagamento' : 'Falar no WhatsApp';
     const fim = ehPix ? 'Segue o comprovante do pagamento 👇' : ehCartao ? (lkCartao ? 'Paguei no *cartão* pelo link. Segue o comprovante 👇' : 'Quero pagar no *cartão* em até 3x sem juros. Podem me enviar o link de pagamento?') : 'Vou pagar em dinheiro na recepção.';
-    const msg=`Olá! Fiz minha inscrição na ${CONFIG.evento.nome}.%0AProtocolo: ${proto}%0ANome: ${insc.nome}%0ADistância: ${insc.distancia}%0ACamiseta: ${insc.camiseta}%0AValor: ${BRL(total)}%0AForma: ${insc.pagamento}%0A${fim}`;
+    const linhaCupom = insc.cupom
+      ? `%0AValor original: ${BRL(insc.valorCheio||0)}%0ACupom: ${insc.cupom} (${insc.cupomPercentual}%25) − ${BRL(insc.cupomDesconto||0)}`
+      : '';
+    const msg=`Olá! Fiz minha inscrição na ${CONFIG.evento.nome}.%0AProtocolo: ${proto}%0ANome: ${insc.nome}%0ADistância: ${insc.distancia}%0ACamiseta: ${insc.camiseta}${linhaCupom}%0AValor: ${BRL(insc.valor)}%0AForma: ${insc.pagamento}%0A${fim}`;
     el('sucWpp').href="https://wa.me/"+CONFIG.whatsapp+"?text="+msg;
     trocarOverlay('ovInscricao','ovSucesso');
-  }catch(e){ console.error(e); toast("Erro ao salvar. Tente de novo."); }
+  }catch(e){
+    console.error(e);
+    if(e && e.cupomInvalido){
+      limparCupomSite(e.message+' Confira e tente de novo — nada foi salvo.');
+      renderResumo();
+      toast("Cupom recusado — nada foi salvo");
+    } else toast("Erro ao salvar. Tente de novo.");
+  }
   finally{ btn.disabled=false; btn.innerHTML="<span>Gerar inscrição</span>"; }
 }
 function copiarPix(){ navigator.clipboard.writeText(CONFIG.pix.chave).then(()=>toast("Chave PIX copiada!")).catch(()=>toast("Copie manualmente a chave.")); }
@@ -1880,24 +2399,27 @@ function admAba(a){
   el('admInscr').style.display=a==='inscr'?'block':'none';
   el('admBalcao').style.display=a==='balcao'?'block':'none';
   el('admConfig').style.display=a==='config'?'block':'none';
+  el('admCupons').style.display=a==='cupons'?'block':'none';
   el('admWpp').style.display=a==='wpp'?'block':'none';
   el('admAud').style.display=a==='aud'?'block':'none';
   el('admDivulg').style.display=a==='divulg'?'block':'none';
   el('tabInscr').classList.toggle('on',a==='inscr');
   el('tabBalcao').classList.toggle('on',a==='balcao');
   el('tabConfig').classList.toggle('on',a==='config');
+  el('tabCupons').classList.toggle('on',a==='cupons');
   el('tabWpp').classList.toggle('on',a==='wpp');
   el('tabAud').classList.toggle('on',a==='aud');
   el('tabDivulg').classList.toggle('on',a==='divulg');
   if(a==='balcao') renderBalcao();
   if(a==='config') renderConfig();
+  if(a==='cupons') renderCupons();
   if(a==='wpp') renderWpp();
   if(a==='aud') renderAuditoria();
   if(a==='divulg') renderDivulg();
 }
 function filtrar(f,btn){ admFiltro=f; admLimite=20; document.querySelectorAll('#admFilters .fbtn').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); renderAdmin(); }
 
-async function carregarAdmin(){ try{ await loadSettings(); admCache=await DB.list(); admLimite=20; renderAdmin(); }catch(e){ console.error(e); toast("Erro ao carregar inscrições"); } }
+async function carregarAdmin(){ try{ await loadSettings(true); admCache=await DB.list(); admLimite=20; renderAdmin(); }catch(e){ console.error(e); toast("Erro ao carregar inscrições"); } }
 const stMap={pendente:['Aguardando','b-pend'],confirmado:['Confirmado','b-conf'],cancelado:['Cancelado','b-canc']};
 const ICO_WA='<svg viewBox="0 0 24 24"><path d="M17.6 6.3A7.9 7.9 0 0 0 12 4a7.9 7.9 0 0 0-7.9 7.9 7.8 7.8 0 0 0 1 4L4 20l4.3-1.1a7.9 7.9 0 0 0 3.8 1 7.9 7.9 0 0 0 7.9-7.9 7.9 7.9 0 0 0-2.4-5.7Zm-5.5 12.2a6.6 6.6 0 0 1-3.4-.9l-.2-.2-2.5.7.7-2.4-.2-.3a6.5 6.5 0 0 1-1-3.5 6.6 6.6 0 1 1 6.6 6.6Z"/></svg>';
 
@@ -2012,7 +2534,7 @@ function renderAdmin(){
   };
 
   const acoes=i=>{
-    if(i.status==='pendente') return `<button class="mini ok" onclick="setStatus('${i._id}','confirmado')">Confirmar pagamento</button><button class="mini no" onclick="setStatus('${i._id}','cancelado')">Cancelar</button>`;
+    if(i.status==='pendente') return `<button class="mini ok" onclick="setStatus('${i._id}','confirmado')">Confirmar pagamento</button><button class="mini leve" onclick="abrirCupomInsc('${i._id}')">Cupom</button><button class="mini no" onclick="setStatus('${i._id}','cancelado')">Cancelar</button>`;
     if(i.status==='confirmado') return i.kitRetirado
       ? `<span class="selo-kit">Kit entregue ✓</span><button class="mini leve" onclick="desfazerKit('${i._id}')">corrigir</button><button class="mini gray" onclick="setStatus('${i._id}','pendente')">Reabrir</button>`
       : `<button class="mini kit" onclick="toggleKit('${i._id}')">Entregar kit</button><button class="mini gray" onclick="setStatus('${i._id}','pendente')">Reabrir</button>`;
@@ -2028,7 +2550,8 @@ function renderAdmin(){
       <td>${esc(i.camiseta)}<br><small style="color:var(--muted)">${esc(i.pagamento)}</small></td>
       <td>${BRL(i.valor||0)}</td>
       <td style="min-width:200px">${etapas(i)}</td>
-      <td style="white-space:nowrap">${acoes(i)}</td></tr>`;
+      <td style="white-space:nowrap">${acoes(i)}</td></tr>
+      ${i.status==='pendente'?`<tr id="cupRow_${i._id}" style="display:none"><td colspan="7" style="background:rgba(255,255,255,.03)"><div id="cupBox_${i._id}"></div></td></tr>`:''}`;
   }).join("");
 
   el('admCards').innerHTML=mostrando.map(i=>{
@@ -2081,31 +2604,72 @@ async function desfazerKit(id){
   renderAdmin(); toast("Entrega corrigida");
 }
 
+/* Inscrições sendo gravadas AGORA. O botão chama setStatus direto pelo onclick,
+   e i.status só mudava no fim da função — dois cliques rápidos passavam pelo
+   guarda e baixavam o estoque duas vezes. Esta trava fecha isso. */
+const emAndamento = new Set();
+
+/* Espera a gravação, mas desiste de ESPERAR depois de ms.
+   Desistir de esperar NÃO cancela a gravação: o Firestore pode entregá-la
+   depois. Por isso este caso nunca desfaz nada — só avisa. */
+function comPrazo(promessa, ms){
+  return Promise.race([ promessa,
+    new Promise((_,rej)=>setTimeout(()=>{ const e=new Error('sem resposta do servidor'); e.semResposta=true; rej(e); }, ms)) ]);
+}
+
 async function setStatus(id,status){
-  const i=admCache.find(x=>x._id===id); if(!i)return; const antigo=i.status;
+  if(emAndamento.has(id)){ toast("Espere — esta inscrição ainda está sendo salva"); return; }
+  const i=admCache.find(x=>x._id===id); if(!i)return;
+  const antigo=i.status;
   if(status===antigo) return;
   if(status==='confirmado'){
     const c=admCache.filter(x=>x.status==='confirmado').length;
     if(c>=CONFIG.vagasTotais){ if(!confirm("As vagas já estão no limite ("+CONFIG.vagasTotais+"). Confirmar mesmo assim?")) return; }
     if(i.camiseta && restanteTam(i.camiseta)<=0){ if(!confirm("O estoque do tamanho "+i.camiseta+" está zerado. Confirmar mesmo assim?")) return; }
   }
-  await DB.update(id, status==='confirmado' ? {status, confirmadoEm:Date.now()} : {status});
-  if(status==='confirmado') i.confirmadoEm=Date.now();
-  // ESTOQUE: baixa só quando CONFIRMA o pagamento; devolve se sair de confirmado
-  const tamValido = i.camiseta && CONFIG.camisetas.some(c=>c.tam===i.camiseta);
-  if(tamValido){
-    if(antigo!=='confirmado' && status==='confirmado'){ ST.camiseta[i.camiseta]=restanteTam(i.camiseta)-1; await DB.saveSettings(ST); }
-    else if(antigo==='confirmado' && status!=='confirmado'){ ST.camiseta[i.camiseta]=restanteTam(i.camiseta)+1; await DB.saveSettings(ST); }
+  emAndamento.add(id);
+  try{
+    // Status, marcador, kit e estoque mudam JUNTOS, numa transação só.
+    // Quem decide se há estoque a mexer é o marcador da inscrição, lido
+    // dentro da transação — não o que esta aba acha que sabe.
+    const r = await comPrazo(DB.moverStatus(id,status), 15000);
+    Object.assign(i, r.patch);   // status, confirmadoEm, estoqueBaixado, kit
+    if(r.delta){
+      try{ const cam=await DB.estoqueAtual(); if(cam) ST.camiseta=cam; }catch(e2){ console.warn(e2); }
+      if(ST.camiseta && Number(ST.camiseta[r.tam])<0){
+        alert("ATENÇÃO — ESTOQUE NEGATIVO\n\nO tamanho "+r.tam+" ficou em "+ST.camiseta[r.tam]+
+              ".\n\nFoi vendido mais do que havia em estoque. Confira em \"Ajustes & estoque\".");
+      }
+    }
+    renderAdmin(); renderPagina();
+    toast(status==='confirmado' ? (r.delta?"Pagamento confirmado ✓ estoque baixado":"Pagamento confirmado ✓")
+        : status==='cancelado'  ? (r.delta?"Inscrição cancelada ✓ camiseta devolvida":"Inscrição cancelada")
+        : "Status atualizado");
+  }catch(e){
+    console.error(e);
+    renderAdmin();
+    if(e && e.semResposta){
+      alert("SEM RESPOSTA DO SERVIDOR\n\nNão deu para saber se a alteração de "+i.nome+" foi gravada.\n\n"+
+            "Clique em \"Atualizar\" para ver como ficou.\nSe não tiver mudado, pode repetir — repetir é seguro: "+
+            "o estoque não baixa duas vezes.");
+    }else{
+      alert("NÃO FOI POSSÍVEL SALVAR\n\nNada foi alterado em "+i.nome+" — nem o status, nem o estoque.\n\n"+
+            "Confira a internet e tente de novo.");
+    }
+  }finally{
+    emAndamento.delete(id);
   }
-  if(antigo==='confirmado' && status!=='confirmado' && i.kitRetirado){
-    await DB.update(id,{kitRetirado:false, kitRetiradoEm:null}); i.kitRetirado=false; i.kitRetiradoEm=null;
-  }
-  i.status=status; renderAdmin(); renderPagina();
-  toast(status==='confirmado'?"Pagamento confirmado ✓ estoque baixado":status==='cancelado'?"Inscrição cancelada":"Status atualizado");
 }
 
 /* ---- CONFIG (preços / estoque / kit) ---- */
+/* Retrato do que a tela mostrou. Na hora de salvar, comparar com isto diz
+   QUAIS campos o administrador realmente mexeu — só esses são gravados. */
+let cfgBase=null;
 function renderConfig(){
+  cfgBase = JSON.parse(JSON.stringify({
+    lotes: ST.lotes||[], loteAtivo: ST.loteAtivo||0,
+    camiseta: ST.camiseta||{}, kit: ST.kit||{}
+  }));
   const lotesCfg=(ST.lotes||[]).map((l,i)=>`
     <div class="cfg-row">
       <div class="nm">${i+1}º</div>
@@ -2139,18 +2703,282 @@ function renderConfig(){
       <button class="btn btn-ghost" onclick="limparTeste()">Limpar inscrições de teste</button></div>`:''}
     <button class="btn btn-cta" style="width:100%;padding:15px" onclick="salvarConfig()"><span>Salvar ajustes</span></button>`;
 }
+/* Grava SÓ o que o administrador mexeu, partindo do documento atual do banco.
+   Se outro aparelho mudou um campo que ele não tocou, aquele campo fica como está. */
 async function salvarConfig(){
-  (ST.lotes||[]).forEach((l,i)=>{
-    const nm=el('cfg_lnome_'+i); if(nm&&nm.value.trim())l.nome=nm.value.trim();
-    const p=parseFloat(el('cfg_lpreco_'+i).value); if(!isNaN(p))l.preco=p;
-    l.ate=el('cfg_late_'+i).value.trim();
-    const lk=el('cfg_llink_'+i); if(lk) l.link=lk.value.trim();
+  const base = cfgBase || {lotes:[],loteAtivo:0,camiseta:{},kit:{}};
+  let atual = (await DB.getSettings()) || {};   // leitura para detectar conflito
+  const patch = {};
+
+  // LOTE ATIVO — só se o seletor foi mexido
+  const ativo=parseInt(el('cfg_loteAtivo').value)||0;
+  if(ativo!==(base.loteAtivo||0)) patch.loteAtivo=ativo;
+
+  // ESTOQUE — só os tamanhos realmente editados. Se um pagamento baixou o
+  // estoque enquanto esta tela estava aberta, avisa antes de sobrescrever.
+  const cam={}, conflitos=[];
+  CONFIG.camisetas.forEach(c=>{
+    const campo=el('cfg_cam_'+c.tam); if(!campo) return;
+    const v=parseInt(campo.value); if(isNaN(v)) return;
+    const antes=Number(base.camiseta[c.tam]);
+    if(v===antes) return;                       // não mexeu → não grava
+    const noBanco = (atual.camiseta && atual.camiseta[c.tam]!=null) ? Number(atual.camiseta[c.tam]) : antes;
+    if(noBanco!==antes) conflitos.push(`${c.tam}: a tela mostrava ${antes}, no site está ${noBanco}, você digitou ${v}`);
+    cam[c.tam]=Math.max(0,v);
   });
-  ST.loteAtivo=parseInt(el('cfg_loteAtivo').value)||0;
-  CONFIG.camisetas.forEach(c=>{ const v=parseInt(el('cfg_cam_'+c.tam).value); if(!isNaN(v))ST.camiseta[c.tam]=Math.max(0,v); });
-  CONFIG.kit.forEach((k,i)=>{ ST.kit[i]={ disp:el('cfg_kdisp_'+i).checked, selo:el('cfg_ksel_'+i).value.trim() }; });
-  await DB.saveSettings(ST);
-  renderPagina(); toast("Ajustes salvos ✓");
+  if(conflitos.length){
+    if(!confirm(
+      "O ESTOQUE MUDOU ENQUANTO ESTA TELA ESTAVA ABERTA\n\n"+conflitos.join("\n")+
+      "\n\nGravar os números que você digitou?\n(Cancelar mantém o que está no site.)")){
+      await loadSettings(true); renderConfig(); renderPagina();
+      toast("Nada foi gravado — tela atualizada"); return;
+    }
+    // O aviso pode ter ficado aberto por minutos. Relê agora, colado na gravação,
+    // para que o array de lotes seja montado sobre o estado mais recente.
+    atual = (await DB.getSettings()) || atual;
+  }
+  if(Object.keys(cam).length) patch.camiseta=cam;
+
+  // LOTES — é um array, e o Firestore substitui array inteiro mesmo com merge.
+  // Por isso ele é montado a partir do documento mais recente, já DEPOIS de
+  // qualquer diálogo com o administrador, aplicando só as edições reais dele.
+  const lotes = Array.isArray(atual.lotes) ? JSON.parse(JSON.stringify(atual.lotes))
+                                           : (ST.lotes||[]).map(l=>({...l}));
+  let mudouLote=false;
+  (base.lotes||[]).forEach((antes,i)=>{
+    const alvo = lotes[i] || (lotes[i]={...antes});
+    const nm=el('cfg_lnome_'+i), pr=el('cfg_lpreco_'+i), at=el('cfg_late_'+i), lk=el('cfg_llink_'+i);
+    if(nm && nm.value.trim() && nm.value.trim()!==(antes.nome||'')){ alvo.nome=nm.value.trim(); mudouLote=true; }
+    const p = pr?parseFloat(pr.value):NaN;
+    if(!isNaN(p) && p!==Number(antes.preco)){ alvo.preco=p; mudouLote=true; }
+    if(at && at.value.trim()!==(antes.ate||'')){ alvo.ate=at.value.trim(); mudouLote=true; }
+    if(lk && lk.value.trim()!==(antes.link||'')){ alvo.link=lk.value.trim(); mudouLote=true; }
+  });
+  if(mudouLote) patch.lotes=lotes;
+
+  // KIT — só os itens alterados
+  const kit={};
+  CONFIG.kit.forEach((k,i)=>{
+    const ck=el('cfg_kdisp_'+i), se=el('cfg_ksel_'+i); if(!ck) return;
+    const antes=base.kit[i]||{disp:true,selo:""};
+    const novo={ disp:ck.checked, selo:(se?se.value.trim():"") };
+    if(novo.disp!==!!antes.disp || novo.selo!==(antes.selo||"")) kit[i]=novo;
+  });
+  if(Object.keys(kit).length) patch.kit=kit;
+
+  if(!Object.keys(patch).length){ toast("Nada mudou"); return; }
+  await DB.patchSettings(patch);
+  await loadSettings(true);     // relê para a tela ficar igual ao site
+  renderConfig(); renderPagina(); toast("Ajustes salvos ✓");
+}
+
+/* ═══════════════ CUPOM DE UMA INSCRIÇÃO (correção do organizador) ═══════════════
+   Só aparece em inscrição aguardando pagamento. Depois de confirmado o
+   pagamento, o valor está fechado e esta área não é oferecida. */
+const cupInscOcupado = new Set();
+function abrirCupomInsc(id){
+  const linha=el('cupRow_'+id); if(!linha) return;
+  const abrindo = linha.style.display==='none';
+  linha.style.display = abrindo ? 'table-row' : 'none';
+  if(abrindo) renderCupomInsc(id);
+}
+function renderCupomInsc(id, msg, ruim){
+  const box=el('cupBox_'+id); if(!box) return;
+  const i=admCache.find(x=>x._id===id); if(!i) return;
+  const cheio = (i.valorCheio!=null ? Number(i.valorCheio) : Number(i.valor||0));
+  const temDescManual = Number(i.desconto||0)>0;
+  const ehCartao = i.pagamento==='Cartão';
+  const aviso = msg ? `<div class="cupom-msg ${ruim?'ruim':'bom'}" style="margin-bottom:10px">${msg}</div>` : '';
+  let corpo;
+  if(ehCartao){
+    corpo = `<div class="cupom-msg ruim">Cupom não pode ser aplicado a pagamento por cartão.<br>
+      O link de pagamento do lote já tem o valor fixo dentro dele.</div>`;
+  } else if(temDescManual){
+    corpo = `<div class="cupom-msg ruim">Esta inscrição tem desconto manual de ${BRL(i.desconto)}${i.motivoDesconto?' ('+esc(i.motivoDesconto)+')':''}.<br>
+      Cupom e desconto manual não se somam — corrija o desconto antes.</div>`;
+  } else if(i.cupom){
+    corpo = `
+      <div class="cons-linhas" style="margin-bottom:12px">
+        <div><span>Valor original</span><b>${BRL(cheio)}</b></div>
+        <div><span>Cupom</span><b>${esc(i.cupom)} — ${i.cupomPercentual||0}%</b></div>
+        <div><span>Desconto</span><b style="color:var(--ok)">− ${BRL(i.cupomDesconto||0)}</b></div>
+        <div><span>Valor final</span><b>${BRL(i.valor||0)}</b></div>
+      </div>
+      <div class="cupom-linha">
+        <input id="cupIn_${id}" type="text" maxlength="24" placeholder="Trocar por outro código" autocomplete="off" spellcheck="false">
+        <button type="button" class="cupom-btn" onclick="aplicarCupomInsc('${id}')">Trocar</button>
+      </div>
+      <button class="mini no" style="margin-top:10px" onclick="removerCupomInsc('${id}')">Remover cupom</button>`;
+  } else {
+    corpo = `
+      <div class="cons-linhas" style="margin-bottom:12px">
+        <div><span>Valor da inscrição</span><b>${BRL(cheio)}</b></div>
+      </div>
+      <div class="cupom-linha">
+        <input id="cupIn_${id}" type="text" maxlength="24" placeholder="Código do cupom" autocomplete="off" spellcheck="false">
+        <button type="button" class="cupom-btn" onclick="aplicarCupomInsc('${id}')">Aplicar</button>
+      </div>`;
+  }
+  box.innerHTML = `<div style="padding:14px 4px">
+    <div style="font-weight:800;font-style:italic;text-transform:uppercase;font-size:13px;color:var(--amarelo);margin-bottom:4px">Desconto / cupom</div>
+    <p style="color:var(--muted);font-size:12px;margin:0 0 12px">Disponível somente antes da confirmação do pagamento.</p>
+    ${aviso}${corpo}</div>`;
+}
+async function aplicarCupomInsc(id){
+  if(cupInscOcupado.has(id)){ toast('Espere — esta inscrição ainda está sendo salva'); return; }
+  const campo=el('cupIn_'+id); if(!campo) return;
+  const cod=normCupom(campo.value);
+  if(!cod){ renderCupomInsc(id,'Digite o código do cupom.',true); return; }
+  cupInscOcupado.add(id);
+  try{
+    const r=await comPrazo(DB.aplicarCupomNaInscricao(id,cod),15000);
+    const i=admCache.find(x=>x._id===id); if(i) Object.assign(i,r.patch);
+    renderAdmin(); renderPagina();
+    const linha=el('cupRow_'+id); if(linha) linha.style.display='table-row';
+    renderCupomInsc(id, r.trocouDe ? `Trocado de <b>${esc(r.trocouDe)}</b> para <b>${esc(cod)}</b>.` : `Cupom <b>${esc(cod)}</b> aplicado.`, false);
+    toast('Cupom aplicado ✓');
+  }catch(e){
+    console.error(e);
+    if(e && e.semResposta){
+      alert("SEM RESPOSTA DO SERVIDOR\n\nA alteração PODE ter sido concluída.\n\n"+
+            "Clique em \"Atualizar\" e confira a inscrição ANTES de tentar de novo.");
+    } else {
+      renderCupomInsc(id, esc(e.message||'Não consegui aplicar o cupom.'), true);
+    }
+  } finally { cupInscOcupado.delete(id); }
+}
+async function removerCupomInsc(id){
+  if(cupInscOcupado.has(id)){ toast('Espere — esta inscrição ainda está sendo salva'); return; }
+  const i=admCache.find(x=>x._id===id); if(!i) return;
+  if(!confirm('REMOVER O CUPOM '+i.cupom+'\n\n'+i.nome+'\n\nO valor volta para '+BRL(i.valorCheio!=null?i.valorCheio:i.valor)+
+              ' e o uso é devolvido ao cupom.\n\nConfirmar?')) return;
+  cupInscOcupado.add(id);
+  try{
+    const r=await comPrazo(DB.removerCupomDaInscricao(id),15000);
+    Object.assign(i,r.patch);
+    renderAdmin(); renderPagina();
+    const linha=el('cupRow_'+id); if(linha) linha.style.display='table-row';
+    renderCupomInsc(id, `Cupom <b>${esc(r.codigo)}</b> removido — valor de volta ao original.`, false);
+    toast('Cupom removido ✓');
+  }catch(e){
+    console.error(e);
+    if(e && e.semResposta){
+      alert("SEM RESPOSTA DO SERVIDOR\n\nA remoção PODE ter sido concluída.\n\n"+
+            "Clique em \"Atualizar\" e confira a inscrição ANTES de tentar de novo.");
+    } else {
+      renderCupomInsc(id, esc(e.message||'Não consegui remover o cupom.'), true);
+    }
+  } finally { cupInscOcupado.delete(id); }
+}
+
+/* ═══════════════ CUPONS — PAINEL ═══════════════ */
+let cupCache=[];
+async function renderCupons(){
+  const box=el('admCupons');
+  box.innerHTML=`<div class="cfg-sec"><h3>Cupons</h3><p style="color:var(--muted);font-size:12.5px">Carregando...</p></div>`;
+  try{ cupCache=await DB.listCupons(); }
+  catch(e){ console.error(e); box.innerHTML=`<div class="cfg-sec"><h3>Cupons</h3><p style="color:var(--alerta);font-size:13px">Não consegui carregar os cupons. Veja o console (F12).</p></div>`; return; }
+  cupCache.sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+  const usoNasInscricoes={};
+  admCache.forEach(i=>{ if(i.cupom){ const k=i.cupom;
+    (usoNasInscricoes[k]=usoNasInscricoes[k]||{total:0,conf:0,pend:0,canc:0,desc:0});
+    usoNasInscricoes[k].total++;
+    if(i.status==='confirmado'){usoNasInscricoes[k].conf++;}
+    else if(i.status==='pendente'){usoNasInscricoes[k].pend++;}
+    else if(i.status==='cancelado'){usoNasInscricoes[k].canc++;}
+    usoNasInscricoes[k].desc+=(i.cupomDesconto||0);
+  }});
+  const linhas = cupCache.length ? cupCache.map(c=>{
+    const usados=Number(c.usados||0), limite=Number(c.limite);
+    const limiteOk = limite>=1;
+    const restam = limiteOk ? Math.max(0,limite-usados) : 0;
+    const venceu = c.validade && Date.now()>Number(c.validade);
+    const u=usoNasInscricoes[c.codigo]||{total:0,conf:0,pend:0,canc:0,desc:0};
+    const estado = c.ativo===false ? '<span style="color:var(--alerta)">desativado</span>'
+                 : venceu ? '<span style="color:var(--alerta)">vencido</span>'
+                 : (!limiteOk) ? '<span style="color:var(--alerta)">limite inválido</span>'
+                 : (usados>=limite) ? '<span style="color:var(--alerta)">esgotado</span>'
+                 : '<span style="color:var(--ok)">ativo</span>';
+    return `<div class="cfg-row" style="grid-template-columns:1fr">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><b style="font-size:16px">${esc(c.codigo)}</b> · ${Number(c.valor)||0}% · ${estado}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="mini ${c.ativo===false?'ok':'gray'}" onclick="alternarCupom('${esc(c.codigo)}')">${c.ativo===false?'Ativar':'Desativar'}</button>
+          <button class="mini no" onclick="removerCupom('${esc(c.codigo)}')">Excluir</button>
+        </div>
+      </div>
+      <div style="color:var(--muted);font-size:12.5px;margin-top:6px">
+        Usados <b style="color:#fff">${usados}</b>${limiteOk?` de <b style="color:#fff">${limite}</b> · restam <b style="color:#fff">${restam}</b>`:' · <span style="color:var(--alerta)">limite não configurado</span>'}
+        ${c.validade?` · vale até ${dataBR(Number(c.validade))}`:''}
+      </div>
+      <div style="color:var(--muted);font-size:12.5px;margin-top:3px">
+        Inscrições: ${u.total} (${u.conf} confirmadas · ${u.pend} aguardando · ${u.canc} canceladas) · desconto dado ${BRL(u.desc)}
+      </div></div>`;
+  }).join('') : `<p style="color:var(--muted);font-size:13px">Nenhum cupom criado ainda.</p>`;
+
+  box.innerHTML=`
+    <div class="cfg-sec"><h3>Criar cupom</h3>
+      <p style="color:var(--muted);font-size:12.5px;margin:-6px 0 12px">O desconto é em <b>percentual</b> sobre o valor do lote. Vale só para <b>PIX</b> e <b>Dinheiro</b> — cartão nunca aceita cupom, porque o link de pagamento já tem o valor fixo dentro dele.</p>
+      <div class="form-grid">
+        <div class="field"><label>Código <span class="req">*</span></label><input id="cupNovoCod" type="text" maxlength="24" placeholder="EVEREST10" autocomplete="off" style="text-transform:uppercase"></div>
+        <div class="field"><label>Percentual (%) <span class="req">*</span></label><input id="cupNovoPct" type="number" min="1" max="100" step="1" placeholder="10"></div>
+        <div class="field"><label>Limite de usos <span class="req">*</span></label><input id="cupNovoLim" type="number" min="1" max="2000" step="1" placeholder="50"></div>
+        <div class="field"><label>Validade (opcional)</label><input id="cupNovoVal" type="date"></div>
+      </div>
+      <div class="cupom-msg" id="cupNovoMsg" style="margin-top:8px"></div>
+      <button class="btn btn-cta" style="width:100%;padding:15px;margin-top:12px" onclick="criarCupom()"><span>Criar cupom</span></button>
+    </div>
+    <div class="cfg-sec"><h3>Cupons criados</h3>${linhas}</div>`;
+}
+async function criarCupom(){
+  const msg=el('cupNovoMsg');
+  const mostrar=(t,ok)=>{ msg.textContent=t; msg.className='cupom-msg '+(ok?'bom':'ruim'); };
+  const cod=normCupom(el('cupNovoCod').value);
+  if(!cod) return mostrar('Digite o código do cupom.');
+  if(!cupomFormatoOk(cod)) return mostrar('Use de 2 a 24 letras/números (pode usar - e _).');
+  const pct=parseInt(el('cupNovoPct').value,10);
+  if(!(pct>0) || pct>100) return mostrar('O percentual precisa ser de 1 a 100.');
+  const lim=parseInt(el('cupNovoLim').value,10);
+  // Mesma faixa da regra do Firestore — não existe cupom ilimitado.
+  if(!(lim>=1)) return mostrar('Informe o limite de usos (pelo menos 1).');
+  if(lim>2000)  return mostrar('O limite máximo por cupom é 2000 usos.');
+  const dataTxt=el('cupNovoVal').value;
+  let validade=null;
+  if(dataTxt){ const d=new Date(dataTxt+'T23:59:59'); if(!isNaN(d)) validade=d.getTime(); }
+  try{
+    if(await DB.getCupom(cod)) return mostrar('Já existe um cupom com o código '+cod+'.');
+    await DB.salvarCupom(cod, { ativo:true, tipo:'percentual', valor:pct, limite:lim,
+      usados:0, validade, formasPermitidas:['PIX','Dinheiro'], criadoEm:Date.now() });
+    el('cupNovoCod').value=''; el('cupNovoPct').value=''; el('cupNovoLim').value=''; el('cupNovoVal').value='';
+    toast('Cupom '+cod+' criado ✓');
+    await renderCupons();
+  }catch(e){ console.error(e); mostrar('Não consegui criar o cupom. Veja o console (F12).'); }
+}
+async function alternarCupom(cod){
+  const c=cupCache.find(x=>x.codigo===cod); if(!c) return;
+  const ligar = c.ativo===false;
+  if(!confirm((ligar?'ATIVAR':'DESATIVAR')+' o cupom '+cod+'?\n\n'+
+    (ligar?'Ele volta a valer para novas inscrições.'
+          :'Ele para de valer para novas inscrições. As inscrições que já usaram não mudam.'))) return;
+  try{ await DB.salvarCupom(cod,{ativo:ligar}); toast('Cupom '+cod+(ligar?' ativado':' desativado')); await renderCupons(); }
+  catch(e){ console.error(e); toast('Não consegui alterar o cupom'); }
+}
+/* Excluir só quando NUNCA foi usado. Com uso, vira desativação — apagar
+   quebraria o histórico das inscrições que apontam para este código. */
+async function removerCupom(cod){
+  const c=cupCache.find(x=>x.codigo===cod); if(!c) return;
+  const usados=Number(c.usados||0);
+  const nasInscricoes=admCache.filter(i=>i.cupom===cod).length;
+  if(usados>0 || nasInscricoes>0){
+    alert('ESTE CUPOM JÁ FOI USADO\n\n'+cod+' aparece em '+Math.max(usados,nasInscricoes)+' inscrição(ões).\n\n'+
+          'Apagar quebraria o histórico e o relatório. Vou apenas DESATIVAR — ele para de valer para novas inscrições.');
+    try{ await DB.salvarCupom(cod,{ativo:false}); toast('Cupom '+cod+' desativado'); await renderCupons(); }
+    catch(e){ console.error(e); toast('Não consegui desativar o cupom'); }
+    return;
+  }
+  if(!confirm('EXCLUIR O CUPOM '+cod+'?\n\nEle nunca foi usado, então pode ser apagado sem perder histórico.\n\nNão dá para desfazer.')) return;
+  try{ await DB.apagarCupom(cod); toast('Cupom '+cod+' excluído'); await renderCupons(); }
+  catch(e){ console.error(e); toast('Não consegui excluir o cupom'); }
 }
 
 function limparTeste(){
@@ -2167,15 +2995,17 @@ function caixaDoDia(){
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const lista=admCache.filter(i=>i.origem==='balcao' && i.status!=='cancelado' &&
     (caixaPeriodo==='tudo' || (i.criadoEm||0)>=hoje.getTime()));
-  const porPag={}; let total=0, descontos=0;
+  const porPag={}; let total=0, descontos=0, cupons=0, comCupom=0;
   lista.forEach(i=>{ if(i.status==='confirmado'){
     porPag[i.pagamento]=(porPag[i.pagamento]||0)+(i.valor||0);
     total+=(i.valor||0); descontos+=(i.desconto||0);
+    if(i.cupom){ cupons+=(i.cupomDesconto||0); comCupom++; }
   }});
-  return { qtd:lista.length, total, porPag, descontos };
+  return { qtd:lista.length, total, porPag, descontos, cupons, comCupom };
 }
 function setCaixaPeriodo(p){ caixaPeriodo=p; renderBalcao(); }
 function renderBalcao(){
+  balCupom=null;   // o formulário é reconstruído: cupom não gruda na próxima venda
   const preco=precoDe(CONFIG.distancias[0].id), lote=loteAtual();
   const cx=caixaDoDia();
   el('admBalcao').innerHTML=`
@@ -2190,6 +3020,7 @@ function renderBalcao(){
       <div class="cx-linha"><span>Inscrições ${caixaPeriodo==='hoje'?'de hoje':'no total'}</span><b>${cx.qtd}</b></div>
       ${Object.entries(cx.porPag).map(([k,v])=>`<div class="cx-linha"><span>${k}</span><b>${BRL(v)}</b></div>`).join('')||'<div class="cx-linha"><span>Nenhuma venda ainda</span><b>—</b></div>'}
       ${cx.descontos>0?`<div class="cx-linha"><span>Descontos concedidos</span><b style="color:var(--alerta)">− ${BRL(cx.descontos)}</b></div>`:''}
+      ${cx.cupons>0?`<div class="cx-linha"><span>Cupons (${cx.comCupom})</span><b style="color:var(--alerta)">− ${BRL(cx.cupons)}</b></div>`:''}
       <div class="cx-linha cx-total"><span>Total recebido</span><b>${BRL(cx.total)}</b></div>
     </div>
 
@@ -2215,6 +3046,15 @@ function renderBalcao(){
             <input id="balMotivo" type="text" maxlength="40" placeholder="Ex: aluno da academia"></div>
         </div>
         <p class="bal-desc-nota">O desconto vale só para esta inscrição e fica registrado no relatório.</p>
+      </details>
+      <details class="bal-desc" id="balCupomBox">
+        <summary>Usar cupom</summary>
+        <div class="cupom-linha" style="margin-top:10px">
+          <input id="balCupom" type="text" maxlength="24" placeholder="Código do cupom" autocomplete="off" spellcheck="false">
+          <button type="button" class="cupom-btn" id="balCupomBtn" onclick="btnCupomBalcao()">Aplicar</button>
+        </div>
+        <div class="cupom-msg" id="balCupomMsg"></div>
+        <p class="bal-desc-nota">Cupom e desconto manual <b>não podem ser usados juntos</b> — use um ou outro.</p>
       </details>
 
       <div class="form-grid" style="margin-top:16px">
@@ -2289,18 +3129,76 @@ function renderBalSizes(){
   }).join('');
 }
 function balSelTam(t){ if(restanteTam(t)<=0) return; balTam=t; renderBalSizes(); }
+/* Cupom aplicado no balcão: {codigo, percentual} ou null. */
+let balCupom=null;
+const brutoBalCent = () => centDe(precoDe(CONFIG.distancias[0].id)) + centDe(CONFIG.taxaServico||0);
 function descontoBal(){
   const v=parseFloat(String((el('balDesconto')||{}).value||'').replace(/[^0-9,.]/g,'').replace(',','.'))||0;
   const base=precoDe(CONFIG.distancias[0].id)+(CONFIG.taxaServico||0);
   return Math.max(0, Math.min(v, base));
 }
-function valorFinalBal(){ return (precoDe(CONFIG.distancias[0].id)+(CONFIG.taxaServico||0)) - descontoBal(); }
+/* Desconto do cupom, em centavos. Recalculado sempre sobre o bruto atual. */
+function descontoCupomBalCent(){
+  if(!balCupom) return 0;
+  const b=brutoBalCent();
+  let d=Math.round(b*Number(balCupom.percentual)/100);
+  if(d>b)d=b; if(d<0)d=0;
+  return d;
+}
+/* Um OU outro, nunca os dois — por isso a subtração é única. */
+function valorFinalBalCent(){
+  const b=brutoBalCent();
+  const abate = balCupom ? descontoCupomBalCent() : centDe(descontoBal());
+  return Math.max(0, b - Math.min(abate, b));
+}
+function valorFinalBal(){ return reaisDe(valorFinalBalCent()); }
+function limparCupomBal(msg){
+  balCupom=null;
+  const c=el('balCupom'); if(c){ c.value=''; c.disabled=false; }
+  const m=el('balCupomMsg'); if(m){ m.textContent=msg||''; m.className='cupom-msg'+(msg?' ruim':''); }
+  const b=el('balCupomBtn'); if(b) b.textContent='Aplicar';
+}
+async function btnCupomBalcao(){
+  const campo=el('balCupom'), msg=el('balCupomMsg'), btn=el('balCupomBtn');
+  if(balCupom){ limparCupomBal(''); atualizaValorBal(); return; }
+  if(descontoBal()>0){
+    msg.textContent='Já existe um desconto manual. Apague o desconto para usar cupom.';
+    msg.className='cupom-msg ruim'; return;
+  }
+  const forma=balPagEscolhido();
+  if(forma==='Cartão'){ msg.textContent='Cupom não disponível para pagamento com cartão.'; msg.className='cupom-msg ruim'; return; }
+  const cod=normCupom(campo.value);
+  if(!cod){ msg.textContent='Digite o código do cupom.'; msg.className='cupom-msg ruim'; return; }
+  btn.disabled=true;
+  try{
+    const r=await aplicarCupom(cod, reaisDe(brutoBalCent()), forma);
+    if(!r.valido){ balCupom=null; msg.textContent=r.motivo; msg.className='cupom-msg ruim'; campo.disabled=false; btn.textContent='Aplicar'; }
+    else{
+      balCupom={ codigo:r.codigo, percentual:r.percentual };
+      campo.value=r.codigo; campo.disabled=true; btn.textContent='Remover';
+      msg.innerHTML='Cupom <b>'+esc(r.codigo)+'</b> — '+r.percentual+'% de desconto.';
+      msg.className='cupom-msg bom';
+    }
+  } finally { btn.disabled=false; atualizaValorBal(); }
+}
 function atualizaValorBal(){
-  const base=precoDe(CONFIG.distancias[0].id)+(CONFIG.taxaServico||0), d=descontoBal(), lote=loteAtual();
-  el('balValorFinal').textContent=BRL(base-d);
-  el('balValorNota').innerHTML = d>0
-    ? `<s style="opacity:.7">${BRL(base)}</s> desconto de ${BRL(d)}`
-    : (lote?lote.nome:'');
+  // Trava de exclusividade: se o operador digitar desconto com cupom aplicado,
+  // o desconto é recusado na hora, com aviso. Nunca os dois somam.
+  if(balCupom && descontoBal()>0){
+    const dd=el('balDesconto'); if(dd) dd.value='';
+    const m=el('balCupomMsg');
+    if(m){ m.textContent='Não dá para somar cupom e desconto manual. Remova o cupom se quiser dar desconto à mão.'; m.className='cupom-msg ruim'; }
+    toast('Cupom aplicado — desconto manual não pode somar');
+  }
+  const bCent=brutoBalCent(), base=reaisDe(bCent), lote=loteAtual();
+  const abateCent = balCupom ? descontoCupomBalCent() : centDe(descontoBal());
+  const finalCent = Math.max(0, bCent - Math.min(abateCent, bCent));
+  el('balValorFinal').textContent=BRL(reaisDe(finalCent));
+  el('balValorNota').innerHTML = balCupom
+    ? `<s style="opacity:.7">${BRL(base)}</s> cupom ${esc(balCupom.codigo)} (${balCupom.percentual}%)`
+    : (abateCent>0
+       ? `<s style="opacity:.7">${BRL(base)}</s> desconto de ${BRL(reaisDe(abateCent))}`
+       : (lote?lote.nome:''));
   calcTroco(); notaCartaoBal();
 }
 function balPay(node){
@@ -2308,14 +3206,16 @@ function balPay(node){
   node.classList.add('sel');
   const cx=el('balTrocoBox');
   if(cx){ cx.style.display = node.dataset.pay==='Dinheiro' ? 'flex' : 'none'; if(node.dataset.pay!=='Dinheiro'){ el('balRecebido').value=''; el('balTroco').innerHTML=''; } }
-  notaCartaoBal();
+  // Cartão cobra pelo link do lote, com o valor dentro da URL: cupom sai.
+  if(node.dataset.pay==='Cartão' && balCupom) limparCupomBal('Cupom removido: não vale para cartão.');
+  atualizaValorBal();
 }
 
 function notaCartaoBal(){
   const box=el('balCartaoNota'); if(!box) return;
   const ehCartao = balPagEscolhido()==='Cartão';
   if(!ehCartao){ box.style.display='none'; box.innerHTML=''; return; }
-  const d=descontoBal(), total=valorFinalBal(), lk=linkCartaoAtual();
+  const d=reaisDe(centDe(descontoBal())), total=valorFinalBal(), lk=linkCartaoAtual();
   box.style.display='block';
   box.innerHTML = d>0
     ? `<div class="cart-nota alerta">
@@ -2372,10 +3272,18 @@ async function salvarBalcao(){
   if(jaTem && !confirm("ATENÇÃO\n\nJá existe inscrição com esse documento:\n"+jaTem.nome+" ("+jaTem.protocolo+")\n\nCadastrar mesmo assim?")) return;
 
   const pago=el('balPago').checked, entregarAgora=pago && el('balKit').checked;
-  const preco=precoDe(CONFIG.distancias[0].id), tx=CONFIG.taxaServico||0;
-  const bruto=preco+tx, desc=descontoBal(), total=bruto-desc;
-  const motivo=(el('balMotivo').value||'').trim();
+  const forma=balPagEscolhido();
+  if(forma==='Cartão' && balCupom) limparCupomBal('Cupom removido: não vale para cartão.');
+  const brutoCent=brutoBalCent(), bruto=reaisDe(brutoCent);
+  // Exclusividade: com cupom, o desconto manual é zero — e vice-versa.
+  const desc = balCupom ? 0 : descontoBal();
+  const cupomCod = balCupom ? balCupom.codigo : null;
+  const cupDescCent = balCupom ? descontoCupomBalCent() : 0;
+  const totalCent = Math.max(0, brutoCent - Math.min(balCupom?cupDescCent:centDe(desc), brutoCent));
+  const total = reaisDe(totalCent);
+  const motivo = balCupom ? '' : (el('balMotivo').value||'').trim();
   if(desc>0 && !confirm("DESCONTO DE "+BRL(desc)+"\n\nValor cheio: "+BRL(bruto)+"\nValor a cobrar: "+BRL(total)+(motivo?"\nMotivo: "+motivo:"")+"\n\nConfirmar?")) return;
+  if(cupomCod && !confirm("CUPOM "+cupomCod+" — "+balCupom.percentual+"%\n\nValor cheio: "+BRL(bruto)+"\nValor a cobrar: "+BRL(total)+"\n\nConfirmar?")) return;
   const d=CONFIG.distancias[0], proto=protocolo(), agora=Date.now();
 
   const insc={ protocolo:proto, status: pago?'confirmado':'pendente',
@@ -2388,18 +3296,58 @@ async function salvarBalcao(){
     origem:'balcao', aceitaWpp: el('balOptin').checked, criadoEm:agora,
     confirmadoEm: pago?agora:null,
     kitRetirado: entregarAgora, kitRetiradoEm: entregarAgora?agora:null };
+  // Tamanho cujo estoque baixa junto com a criação (só em venda já paga).
+  const baixarTam = (pago && CONFIG.camisetas.some(c=>c.tam===balTam)) ? balTam : null;
+  insc.estoqueBaixado = !!baixarTam;   // marcador: nasce coerente com o que foi feito
 
   try{
-    const id=await DB.add(insc);
+    // Inscrição, cupom e baixa de estoque nascem juntos, atomicamente.
+    // Se falhar, NADA foi criado — por isso "tente de novo" é seguro aqui.
+    let id;
+    if(cupomCod){
+      const r=await comPrazo(DB.criarComCupom(insc, baixarTam, cupomCod, forma, brutoCent), 15000);
+      Object.assign(insc, r.doc); id=r.id;
+    } else {
+      id=await comPrazo(DB.criarComEstoque(insc, baixarTam), 15000);
+    }
     DB.evento('venda_balcao');
-    if(pago && CONFIG.camisetas.some(c=>c.tam===balTam)){ ST.camiseta[balTam]=restanteTam(balTam)-1; await DB.saveSettings(ST); }
+    if(baixarTam){
+      try{
+        const cam=await DB.estoqueAtual();
+        if(cam){ ST.camiseta=cam;
+          if(Number(cam[balTam])<0){
+            alert("ATENÇÃO — ESTOQUE NEGATIVO\n\nO tamanho "+balTam+" ficou em "+cam[balTam]+
+                  ".\n\nFoi vendido mais do que havia em estoque. Confira em \"Ajustes & estoque\".");
+          }
+        }
+      }catch(e2){ console.warn(e2); }
+    }
     insc._id=id||insc._id; balUltima=insc;
     admCache.unshift(insc);
     renderBalcao();              // limpa o formulário (some desconto e dados do anterior)
     mostrarSucessoBalcao(insc);  // e mostra o comprovante logo abaixo
     renderPagina();
     toast(pago?"Inscrição confirmada ✓":"Inscrição registrada (aguardando pagamento)");
-  }catch(e){ console.error(e); toast("Erro ao salvar. Tente de novo."); }
+  }catch(e){
+    console.error(e);
+    // Desistir de esperar NÃO cancela a gravação: o lote pode ter sido concluído
+    // no servidor. Dizer "tente de novo" aqui faria o vendedor cadastrar a mesma
+    // pessoa duas vezes — e a checagem de documento repetido não pegaria, porque
+    // ela olha o admCache, que ainda não tem o registro recém-criado.
+    if(e && e.semResposta){
+      alert("SEM RESPOSTA DO SERVIDOR\n\nA inscrição de "+nome+" PODE ter sido salva.\n\n"+
+            "NÃO cadastre de novo agora.\n\n"+
+            "1. Clique em \"Atualizar\"\n"+
+            "2. Procure pelo nome ou documento na busca do balcão\n"+
+            "3. Só cadastre de novo se tiver certeza de que não foi salva.");
+    } else if(e && e.cupomInvalido){
+      limparCupomBal(e.message+' Nada foi salvo.');
+      atualizaValorBal();
+      alert("CUPOM RECUSADO\n\n"+e.message+"\n\nNada foi salvo. Refaça a venda sem o cupom ou com outro código.");
+    } else {
+      toast("Erro ao salvar. Tente de novo.");
+    }
+  }
 }
 
 function mostrarSucessoBalcao(i){
@@ -2414,6 +3362,7 @@ function mostrarSucessoBalcao(i){
         <div><span>Camiseta</span><b>${esc(i.camiseta)}</b></div>
         <div><span>Pagamento</span><b>${esc(i.pagamento)} · ${BRL(i.valor)}</b></div>
         ${i.desconto>0?`<div><span>Desconto</span><b style="color:var(--alerta)">− ${BRL(i.desconto)}${i.motivoDesconto?' ('+esc(i.motivoDesconto)+')':''}</b></div>`:''}
+        ${i.cupom?`<div><span>Cupom ${esc(i.cupom)}</span><b style="color:var(--alerta)">− ${BRL(i.cupomDesconto||0)} (${i.cupomPercentual||0}%)</b></div>`:''}
         <div><span>Situação</span><b>${i.status==='confirmado'?'Pago':'Aguardando'}${i.kitRetirado?' · kit entregue':''}</b></div>
       </div>
       <a class="sit-btn ${m.cor}" href="${linkSituacao(i)}" target="_blank" rel="noopener">${ICO_WA}<span>Enviar comprovante no WhatsApp</span></a>
@@ -2450,6 +3399,7 @@ function imprimirComprovante(proto){
       <tr><td>Camiseta</td><td>${esc(i.camiseta)}</td></tr>
       <tr><td>Pagamento</td><td>${esc(i.pagamento)}</td></tr>
       ${i.desconto>0?`<tr><td>Valor cheio</td><td>${BRL(i.valorCheio||i.valor+i.desconto)}</td></tr><tr><td>Desconto${i.motivoDesconto?' ('+esc(i.motivoDesconto)+')':''}</td><td>- ${BRL(i.desconto)}</td></tr>`:''}
+      ${i.cupom?`<tr><td>Valor cheio</td><td>${BRL(i.valorCheio||((i.valor||0)+(i.cupomDesconto||0)))}</td></tr><tr><td>Cupom ${esc(i.cupom)} (${i.cupomPercentual||0}%)</td><td>- ${BRL(i.cupomDesconto||0)}</td></tr>`:''}
       <tr><td>Valor pago</td><td>${BRL(i.valor)}</td></tr>
       <tr><td>Situação</td><td>${i.status==='confirmado'?'PAGO':'AGUARDANDO'}</td></tr>
       <tr><td>Kit</td><td>${i.kitRetirado?'ENTREGUE':'A retirar a partir de '+esc(ev.retiradaKit)}</td></tr>
@@ -2480,6 +3430,20 @@ async function calcularAuditoria(){
   const receita=conf.reduce((s,i)=>s+(i.valor||0),0);
   const descTotal=conf.reduce((s,i)=>s+(i.desconto||0),0);
   const comDesc=conf.filter(i=>(i.desconto||0)>0).length;
+
+  /* CUPONS — agrupado por código, contado sobre TODAS as inscrições
+     (não só confirmadas), porque interessa saber quantas travaram. */
+  const porCupom={};
+  ins.forEach(i=>{ if(!i.cupom) return;
+    const c=(porCupom[i.cupom]=porCupom[i.cupom]||{codigo:i.cupom,total:0,conf:0,pend:0,canc:0,desconto:0,pct:i.cupomPercentual||0});
+    c.total++; c.desconto+=(i.cupomDesconto||0);
+    if(i.status==='confirmado')c.conf++; else if(i.status==='pendente')c.pend++; else if(i.status==='cancelado')c.canc++;
+  });
+  const cupons=Object.values(porCupom).sort((a,b)=>b.total-a.total);
+  const cupTotalInscr=cupons.reduce((s,c)=>s+c.total,0);
+  const cupTotalDesc=conf.reduce((s,i)=>s+(i.cupomDesconto||0),0);
+  const cupConf=cupons.reduce((s,c)=>s+c.conf,0);
+  const cupConversao=cupTotalInscr?(cupConf/cupTotalInscr*100):null;
   const parado=pend.reduce((s,i)=>s+(i.valor||0),0);
   const ticket=conf.length?receita/conf.length:0;
 
@@ -2568,7 +3532,8 @@ async function calcularAuditoria(){
   return { agora, ins, ativas, conf, pend, canc, funil, receita, parado, ticket, mediaPgH, pendAntigos, semKit,
            semKitAntigos, retirados:conf.filter(i=>i.kitRetirado), diasAtivos, ultimos7, ritmo7, restantes,
            diasEsgotar, dEvento, projecao, tamanhos, porPag, porCidade, porGenero, faixas, idadeMedia,
-           optin, duplicados, telRuins, problemas:P, recomendacoes:R, porDia, porSemana, porHora, porOrigem, descTotal, comDesc };
+           optin, duplicados, telRuins, problemas:P, recomendacoes:R, porDia, porSemana, porHora, porOrigem, descTotal, comDesc,
+           cupons, cupTotalInscr, cupTotalDesc, cupConf, cupConversao };
 }
 
 function textoEsgotar(a){
@@ -2594,6 +3559,7 @@ async function renderAuditoria(){
         <div class="stat"><b>${a.conf.length}</b><small>Pagas</small></div>
         <div class="stat"><b>${BRL(a.receita)}</b><small>Recebido</small></div>
         ${a.descTotal>0?`<div class="stat"><b>${BRL(a.descTotal)}</b><small>Descontos</small></div>`:''}
+        ${a.cupTotalDesc>0?`<div class="stat"><b>${BRL(a.cupTotalDesc)}</b><small>Cupons</small></div>`:''}
         <div class="stat"><b>${BRL(a.parado)}</b><small>A receber</small></div>
         <div class="stat"><b>${a.dEvento!==null?a.dEvento:'—'}</b><small>Dias p/ evento</small></div>
         <div class="stat"><b>${a.projecao!==null?a.projecao:'—'}</b><small>Projeção final</small></div>
@@ -2746,7 +3712,7 @@ async function baixarPlanilha(){
     const cab=['Protocolo','Inscrito em','Nome','Tipo doc','Documento','Nascimento','Gênero',
                'Celular','E-mail','Cidade','Camiseta','Distância','Forma de pagamento','Valor',
                'Status','Confirmado em','Kit retirado','Retirado em','Origem','Aceita WhatsApp',
-               'Desconto','Motivo do desconto'];
+               'Desconto','Motivo do desconto','Valor cheio','Cupom','Desconto do cupom'];
     const linhas=lista.map(i=>[
       i.protocolo, dataBR(i.criadoEm), i.nome, i.docTipo, docDe(i), i.nascimento, i.genero,
       i.celular, i.email, i.cidade, i.camiseta, i.distancia, i.pagamento,
@@ -2754,7 +3720,10 @@ async function baixarPlanilha(){
       i.status, i.confirmadoEm?dataBR(i.confirmadoEm):'', i.kitRetirado?'sim':'não',
       i.kitRetiradoEm?dataBR(i.kitRetiradoEm):'', i.origem==='balcao'?'balcão':'site',
       i.aceitaWpp===false?'não':'sim',
-      i.desconto?(Number(i.desconto)||0).toFixed(2).replace('.',','):'', i.motivoDesconto||''
+      i.desconto?(Number(i.desconto)||0).toFixed(2).replace('.',','):'', i.motivoDesconto||'',
+      i.valorCheio?(Number(i.valorCheio)||0).toFixed(2).replace('.',','):'',
+      i.cupom||'',
+      i.cupomDesconto?(Number(i.cupomDesconto)||0).toFixed(2).replace('.',','):''
     ].map(celulaCSV).join(';'));
     baixarArquivo(`inscritos-corrida-everest_${carimboArquivo()}.csv`,
                   '﻿'+[cab.map(celulaCSV).join(';'), ...linhas].join('\r\n'), 'text/csv');
@@ -2828,7 +3797,7 @@ async function zerarTudo(){
     if(btn) btn.textContent='Apagando...';
     await DB.zerar();
     ST = seedSettings();          // estoque, kit e seleção de lote voltam ao CONFIG
-    await DB.saveSettings(ST);
+    await DB.substituirSettings(ST);   // único lugar onde reescrever tudo é o objetivo
     admCache=[]; admLimite=20; balUltima=null;
     renderAdmin(); renderPagina(); renderBalcao(); await renderAuditoria();
     toast('Site zerado ✓ — o backup do que foi apagado está na sua pasta Downloads');
@@ -2853,6 +3822,14 @@ async function copiarAuditoria(){
   L.push(`Recebido: ${BRL(a.receita)} | A receber: ${BRL(a.parado)} | Ticket médio: ${BRL(a.ticket)}`);
   if(a.descTotal>0) L.push(`Descontos concedidos: ${BRL(a.descTotal)} em ${a.comDesc} inscrição(ões)`);
   L.push(`Tempo médio até pagar: ${a.mediaPgH!==null?Math.round(a.mediaPgH)+'h':'sem dados'}`);
+
+  if(a.cupons.length){
+    bloco('CUPONS');
+    L.push(`Inscrições com cupom: ${a.cupTotalInscr} | Confirmadas: ${a.cupConf}` +
+           (a.cupConversao!==null?` | Conversão: ${Math.round(a.cupConversao)}%`:''));
+    L.push(`Desconto total concedido (confirmadas): ${BRL(a.cupTotalDesc)}`);
+    a.cupons.forEach(c=>L.push(`  ${c.codigo} (${c.pct}%): ${c.total} inscrições — ${c.conf} pagas, ${c.pend} aguardando, ${c.canc} canceladas — ${BRL(c.desconto)}`));
+  }
 
   bloco('FUNIL');
   L.push(`Visitas: ${f.visita}`);
@@ -3103,7 +4080,7 @@ function ligarSegredo(){
 }
 
 document.addEventListener('DOMContentLoaded',async()=>{
-  await loadSettings();
+  await loadSettings(false);   // página pública: leitura pura, nunca grava
   renderPagina(); criarNeve(); ligarLightbox(); ligarSegredo();
   try{ if(!sessionStorage.getItem('ev_visita')){ sessionStorage.setItem('ev_visita','1'); DB.evento('visita'); } }catch(e){}
   el('fDoc').addEventListener('input',mascaraDoc);
