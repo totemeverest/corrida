@@ -1337,17 +1337,81 @@ const DB = {
   async add(o){ if(fdb){const r=await fdb.collection("inscricoes").add(o);return r.id;} const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");o._id="L"+Date.now();a.push(o);localStorage.setItem(LS_INSC,JSON.stringify(a));return o._id; },
   async list(){ if(fdb){const s=await fdb.collection("inscricoes").orderBy("criadoEm","desc").get();return s.docs.map(d=>({_id:d.id,...d.data()}));} return JSON.parse(localStorage.getItem(LS_INSC)||"[]").sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0)); },
   async update(id,patch){ if(fdb){await fdb.collection("inscricoes").doc(id).update(patch);return;} const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");const i=a.find(x=>x._id===id);if(i){Object.assign(i,patch);localStorage.setItem(LS_INSC,JSON.stringify(a));} },
-  /* Procura inscrições já feitas com o mesmo documento (só os dígitos,
-     pra achar mesmo se a pessoa digitou com ou sem pontuação). */
+  /* Procura inscrições já feitas com o mesmo documento.
+
+     ANTES: `collection("inscricoes").get()` — baixava a coleção INTEIRA e
+     filtrava no navegador. Custava N leituras para achar 0, 1 ou 2
+     documentos. Com ~250 inscrições, cada pessoa que chegava no resumo
+     gastava 250 leituras. Isso, somado à consulta pública, foi o que
+     estourou a cota gratuita do Firestore em 14/09/2026.
+
+     AGORA: consulta por igualdade, resolvida no servidor. O documento é
+     gravado já mascarado (`mascaraDoc`/`mascaraCPF` rodam a cada tecla),
+     então o formato é determinístico e dá para procurar pelo valor exato.
+     Tentamos poucas variações porque `documento` guarda o texto como foi
+     digitado e `cpf` só existe quando o tipo é CPF (inscrição bem antiga
+     pode ter só `cpf` — é por isso que `docDe` tem esse fallback).
+
+     O filtro por dígitos continua no fim: a consulta estreita, ele confere.
+
+     LIMITE CONHECIDO — leia antes de mexer: se alguma inscrição antiga
+     tiver sido gravada num formato fora das variações testadas, ela não
+     aparece aqui. Isso enfraquece só o AVISO de duplicidade, que já era
+     apenas um aviso (a pessoa podia seguir mesmo assim). Não altera nada
+     financeiro, não mexe em estoque, e o painel continua marcando
+     "documento repetido" com os dados que ele já carregou. NENHUM
+     documento é migrado ou reescrito para isso funcionar. */
   async porDocumento(doc){
     const alvo=soDigitos(doc); if(alvo.length<5) return [];
     try{
       if(fdb){
-        const s=await fdb.collection("inscricoes").get();
-        return s.docs.map(d=>({_id:d.id,...d.data()})).filter(i=>soDigitos(docDe(i))===alvo);
+        const achados=new Map();
+        // CPF cai em `documento` E em `cpf`; RG nunca chega em `cpf`.
+        const campos = alvo.length===11 ? ["documento","cpf"] : ["documento"];
+        for(const v of variantesDoc(doc)){
+          for(const campo of campos){
+            try{
+              const s=await fdb.collection("inscricoes").where(campo,"==",v).limit(10).get();
+              s.docs.forEach(d=>achados.set(d.id,{_id:d.id,...d.data()}));
+            }catch(e){ console.warn("consulta",campo,"=",v,"falhou:",e); }
+          }
+        }
+        return [...achados.values()].filter(i=>soDigitos(docDe(i))===alvo);
       }
       return JSON.parse(localStorage.getItem(LS_INSC)||"[]").filter(i=>soDigitos(docDe(i))===alvo);
     }catch(e){ console.warn("checagem de duplicidade falhou:",e); return []; }
+  },
+
+  /* Consulta pública (protocolo OU documento), resolvida no servidor.
+
+     ANTES `buscarConsulta()` baixava a coleção inteira a cada consulta.
+     Como todo mundo que paga no PIX é mandado conferir o status, essa era
+     a maior fonte isolada de leituras do site.
+
+     O protocolo é gerado por `protocolo()` sempre em MAIÚSCULAS e com
+     formato fixo (EVR-XXXXXNN), então a igualdade exata é confiável. */
+  async procurar(termo){
+    const t=String(termo||"").trim(); if(t.length<4) return [];
+    if(fdb){
+      const achados=new Map();
+      const proto=t.toUpperCase();
+      if(/^EVR-?[A-Z0-9]{4,12}$/.test(proto)){
+        try{
+          const s=await fdb.collection("inscricoes").where("protocolo","==",proto).limit(5).get();
+          s.docs.forEach(d=>achados.set(d.id,{_id:d.id,...d.data()}));
+        }catch(e){ console.warn("consulta por protocolo falhou:",e); }
+      }
+      if(!achados.size && soDigitos(t).length>=5){
+        (await DB.porDocumento(t)).forEach(i=>achados.set(i._id,i));
+      }
+      return [...achados.values()];
+    }
+    const q=normaliza(t), qd=soDigitos(t);
+    return JSON.parse(localStorage.getItem(LS_INSC)||"[]").filter(i=>{
+      if(normaliza(i.protocolo)===q) return true;
+      if(qd.length>=5 && soDigitos(docDe(i))===qd) return true;
+      return false;
+    });
   },
   /* DB.setStatus foi removido: ele trocava o status sem tocar no marcador
      estoqueBaixado nem no estoque. Não tinha chamador, mas era uma armadilha
@@ -1508,18 +1572,37 @@ const DB = {
     if(fdb){ const d=await fdb.collection("cupons").doc(cod).get(); return d.exists?d.data():null; }
     return (JSON.parse(localStorage.getItem(LS_CUP)||"{}"))[cod]||null;
   },
-  async listCupons(){
-    if(fdb){ const s=await fdb.collection("cupons").get(); return s.docs.map(d=>({codigo:d.id,...d.data()})); }
-    const m=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
-    return Object.keys(m).map(k=>({codigo:k,...m[k]}));
+  /* CACHE CURTO DA LISTA DE CUPONS.
+
+     `renderVitrine()` é chamada por `renderPagina()`, e `renderPagina()`
+     roda no carregamento da página E depois de cada confirmação de
+     pagamento, cada venda no balcão e cada ajuste salvo. Sem cache, cada
+     uma dessas ações relia a coleção `cupons` inteira.
+
+     Qualquer gravação de cupom chama `invalidarCupons()`, então "restam"
+     não fica preso num número velho. E mesmo que ficasse: quem decide de
+     verdade é a transação, que relê o cupom e recusa se tiver acabado —
+     esse caminho já existia e não mudou. Passe 0 para forçar leitura. */
+  _cupCache:null, _cupCacheEm:0,
+  invalidarCupons(){ DB._cupCache=null; DB._cupCacheEm=0; },
+  async listCupons(maxIdadeMs){
+    const ttl = (maxIdadeMs==null) ? 120000 : Number(maxIdadeMs);
+    if(DB._cupCache && (Date.now()-DB._cupCacheEm) < ttl) return DB._cupCache;
+    let lista;
+    if(fdb){ const s=await fdb.collection("cupons").get(); lista=s.docs.map(d=>({codigo:d.id,...d.data()})); }
+    else { const m=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
+           lista=Object.keys(m).map(k=>({codigo:k,...m[k]})); }
+    DB._cupCache=lista; DB._cupCacheEm=Date.now();
+    return lista;
   },
   /* merge: nunca substitui o documento inteiro, então `usados` de um cupom
      em uso jamais é zerado por uma edição de percentual ou limite. */
   async salvarCupom(cod, dados){
-    if(fdb){ await fdb.collection("cupons").doc(cod).set(dados,{merge:true}); return; }
+    if(fdb){ await fdb.collection("cupons").doc(cod).set(dados,{merge:true}); DB.invalidarCupons(); return; }
     const m=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
     m[cod]=Object.assign(m[cod]||{}, dados);
     localStorage.setItem(LS_CUP, JSON.stringify(m));
+    DB.invalidarCupons();
   },
   /* ---------------------------------------------------------------------
      EDITAR CUPOM. Transacional, para ler `usados` e `valor` atuais e decidir
@@ -1569,24 +1652,28 @@ const DB = {
     };
     if(fdb){
       const ref=fdb.collection("cupons").doc(cod2);
-      return await fdb.runTransaction(async t=>{
+      const p = await fdb.runTransaction(async t=>{
         const d=await t.get(ref);
-        const p=validar(d.exists?d.data():null);
-        t.update(ref,p);          // `usados`, `tipo` e `criadoEm` nunca entram aqui
-        return p;
+        const pp=validar(d.exists?d.data():null);
+        t.update(ref,pp);         // `usados`, `tipo` e `criadoEm` nunca entram aqui
+        return pp;
       });
+      DB.invalidarCupons();       // a vitrine precisa ver a edição na hora
+      return p;
     }
     const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
     const p=validar(mapa[cod2]||null);
     Object.assign(mapa[cod2],p);
     localStorage.setItem(LS_CUP,JSON.stringify(mapa));
+    DB.invalidarCupons();
     return p;
   },
 
   async apagarCupom(cod){
-    if(fdb){ await fdb.collection("cupons").doc(cod).delete(); return; }
+    if(fdb){ await fdb.collection("cupons").doc(cod).delete(); DB.invalidarCupons(); return; }
     const m=JSON.parse(localStorage.getItem(LS_CUP)||"{}"); delete m[cod];
     localStorage.setItem(LS_CUP, JSON.stringify(m));
+    DB.invalidarCupons();
   },
 
   /* ---------------------------------------------------------------------
@@ -1955,6 +2042,24 @@ function diasDe(ts){ if(!ts) return null; return Math.floor((Date.now()-ts)/8640
 function textoDias(ts){ const d=diasDe(ts); if(d===null) return ''; if(d<=0) return 'hoje'; if(d===1) return 'há 1 dia'; return 'há '+d+' dias'; }
 const docDe = i => (i.documento||i.cpf||'');
 const docTipoDe = i => (i.docTipo||(i.cpf?'CPF':'Doc'));
+
+/* Formas em que o MESMO documento pode ter sido gravado, para consulta
+   por igualdade no servidor. O campo guarda o texto como foi digitado, e
+   as máscaras rodam a cada tecla — então na prática CPF é sempre
+   "000.000.000-00" e RG é sempre maiúsculo e limpo. As outras variações
+   entram só como rede de segurança para registros antigos.
+   Set dedupe: quando o valor digitado já está mascarado (o caso comum),
+   isto devolve 1 ou 2 itens, não 3. */
+function variantesDoc(v){
+  const t=String(v||'').trim();
+  const dig=soDigitos(t);
+  const fora=new Set([t]);
+  if(dig) fora.add(dig);
+  if(dig.length===11) fora.add(mascaraCPF(dig));
+  else fora.add(t.toUpperCase().replace(/[^0-9A-Z.\-\/ ]/g,''));
+  fora.delete('');
+  return [...fora];
+}
 function combina(i, termo){
   const q = normaliza(termo).trim();
   if(!q) return true;
@@ -2145,13 +2250,9 @@ function buscarConsulta(){
   const btn=el('consBtn'); btn.disabled=true; btn.innerHTML='<span>Procurando...</span>';
   alvo.innerHTML='<div class="cons-vazio">Procurando sua inscrição...</div>';
 
-  DB.list().then(todas=>{
-    const q=normaliza(termo), qd=soDigitos(termo);
-    const achou=todas.filter(i=>{
-      if(normaliza(i.protocolo)===q) return true;
-      if(qd.length>=5 && soDigitos(docDe(i))===qd) return true;
-      return false;
-    });
+  /* DB.procurar consulta por protocolo/documento no servidor.
+     Antes isto era DB.list() — a coleção inteira, a cada consulta. */
+  DB.procurar(termo).then(achou=>{
     renderConsulta(achou, termo);
   }).catch(e=>{
     console.error(e);
@@ -2313,10 +2414,15 @@ function selPay(node){
    Lê SÓ a coleção cupons — os números de "restam" saem de limite − usados do
    próprio documento. Nenhuma inscrição é carregada para isso. */
 let vitCache=[];
-async function renderVitrine(){
+/* forcar=true ignora o cache de cupons. Use quando a vitrine precisa se
+   corrigir na hora (cupom que acabou entre a vitrine e o clique) ou logo
+   depois de uma edição. No caminho normal — inclusive dentro de
+   renderPagina(), que roda a cada confirmação de pagamento — o cache
+   evita reler a coleção `cupons` toda vez. */
+async function renderVitrine(forcar){
   const box=el('vitrineCupons'); if(!box) return;
   let lista=[];
-  try{ lista=await DB.listCupons(); }
+  try{ lista=await DB.listCupons(forcar?0:undefined); }
   catch(e){ box.style.display='none'; box.innerHTML=''; return; }   // sem permissão ou offline: some, sem quebrar
   const lote=loteAtualIdx(), agora=Date.now();
   const visiveis = lista.filter(c=>{
@@ -2358,7 +2464,8 @@ async function resgatarCupom(codigo){
     sel.cupom=null;
     if(msg){ msg.textContent=r.motivo; msg.className='cupom-msg ruim'; }
     toast(r.motivo);
-    renderVitrine();                // a vitrine se corrige sozinha
+    DB.invalidarCupons();
+    renderVitrine(true);            // a vitrine se corrige sozinha — leitura fresca
   } else {
     sel.cupom={codigo:r.codigo, percentual:r.percentual};
     if(campo){ campo.value=r.codigo; campo.disabled=true; }
@@ -3108,7 +3215,9 @@ let cupCache=[];
 async function renderCupons(){
   const box=el('admCupons');
   box.innerHTML=`<div class="cfg-sec"><h3>Cupons</h3><p style="color:var(--muted);font-size:12.5px">Carregando...</p></div>`;
-  try{ cupCache=await DB.listCupons(); }
+  // Aba de gestão: sempre leitura fresca. O organizador precisa do `usados`
+  // exato para decidir; é uma tela de baixa frequência, não pesa na cota.
+  try{ cupCache=await DB.listCupons(0); }
   catch(e){ console.error(e); box.innerHTML=`<div class="cfg-sec"><h3>Cupons</h3><p style="color:var(--alerta);font-size:13px">Não consegui carregar os cupons. Veja o console (F12).</p></div>`; return; }
   cupCache.sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
   const usoNasInscricoes={};
