@@ -4471,7 +4471,7 @@ function renderBalcao(){
       <div class="form-grid" style="margin-top:16px">
         <div class="field full"><label>Nome completo <span class="req">*</span></label>
           <input id="balNome" type="text" maxlength="80" placeholder="Nome e sobrenome" autocomplete="off"></div>
-        <div class="field"><label>Documento <span class="req">*</span></label>
+        <div class="field"><label>Documento <span class="req" id="balDocReq">*</span></label>
           <div class="doc-linha">
             <select id="balDocTipo" onchange="document.getElementById('balDoc').value='';document.getElementById('balDoc').placeholder=this.value==='CPF'?'000.000.000-00':'Número do RG'"><option value="CPF">CPF</option><option value="RG">RG</option></select>
             <input id="balDoc" type="text" inputmode="numeric" maxlength="20" placeholder="000.000.000-00">
@@ -4676,6 +4676,12 @@ function atualizaCortesiaBal(){
     const x=el(id); if(x) x.style.display = on ? 'none' : (id==='balCartaoNota' ? 'none' : '');
   });
   const pago=el('balPago'); if(pago){ pago.disabled=on; if(on) pago.checked=true; }
+  /* DOCUMENTO: obrigatório na venda paga, opcional na cortesia. Aqui muda só
+     o RÓTULO — quem decide de verdade é `salvarBalcao()`, que já aceita doc
+     vazio na cortesia e valida normalmente quando a pessoa informa algo. */
+  const req=el('balDocReq');
+  if(req){ req.textContent = on ? '(opcional)' : '*';
+           req.style.color = on ? 'var(--muted)' : ''; }
   const nota=el('balValorNota');
   if(on){
     el('balValorFinal').textContent=BRL(0);
