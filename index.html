@@ -2536,6 +2536,13 @@ function maxCamisasPorDoc(){
   const n = Number(ST && ST.maxCamisasPorDoc);
   return (n >= 1 && n <= 50) ? Math.floor(n) : 1;
 }
+/* Mostrar a QUANTIDADE de camisas no formulário público.
+   Ausente = DESATIVADO: o participante vê só Disponível/Indisponível.
+   Nunca é gravado só por faltar — só quando o organizador liga e salva.
+   O BALCÃO não consulta isto: lá o operador vê sempre o número exato. */
+function mostrarEstoquePublico(){
+  return (ST && ST.mostrarEstoquePublico) === true;
+}
 
 /* Formas em que o MESMO documento pode ter sido gravado, para consulta
    por igualdade no servidor. O campo guarda o texto como foi digitado, e
@@ -3045,13 +3052,13 @@ function renderSizes(){
     if(!multi){
       // LIMITE 1 — exatamente o cartão de sempre.
       return `<div class="size ${disp?'':'off'} ${sel.camiseta===c.tam?'sel':''}" ${disp?`onclick="selTam('${c.tam}')"`:''}>
-        <b>${c.tam}</b><small>${disp?'Disponível':'Indisponível'}</small></div>`;
+        <b>${c.tam}</b><small>${disp?(mostrarEstoquePublico()?restanteTam(c.tam)+' disp.':'Disponível'):'Indisponível'}</small></div>`;
     }
     // MÚLTIPLAS — contador [−] n [+]. Botões grandes, pensados para o dedo.
     const semEstoque=!disp, noTeto=selRestante()<=0 && q<=0, cheioTam=q>=restanteTam(c.tam);
     return `<div class="size qtd ${q>0?'sel':''} ${semEstoque?'off':''}">
       <b>${c.tam}</b>
-      <small>${semEstoque?'Esgotado':(restanteTam(c.tam)+' disp.')}</small>
+      <small>${mostrarEstoquePublico()?(semEstoque?'Esgotado':restanteTam(c.tam)+' disp.'):(semEstoque?'Indisponível':'Disponível')}</small>
       <div class="qtd-ctrl">
         <button type="button" class="qtd-btn" ${q<=0?'disabled':''} aria-label="Menos uma camisa ${c.tam}"
                 onclick="mudarQtd('${c.tam}',-1)">−</button>
@@ -3921,8 +3928,14 @@ function renderConfig(){
       <div class="mini-field" style="max-width:300px;margin-bottom:14px"><label>Lote ativo agora</label><select id="cfg_loteAtivo">${ativoOpts}</select></div>
       ${lotesCfg}</div>
     <div class="cfg-sec"><h3>Estoque de camisetas</h3>
-      <p style="color:var(--muted);font-size:12.5px;margin:-6px 0 10px">Quantidade em estoque por tamanho. O cliente vê só "Disponível/Indisponível". <b>O estoque baixa 1 só quando você confirma o pagamento</b> — e volta se você reabrir/cancelar.</p>
+      <p style="color:var(--muted);font-size:12.5px;margin:-6px 0 10px">Quantidade em estoque por tamanho. <b>O estoque baixa 1 só quando você confirma o pagamento</b> — e volta se você reabrir/cancelar.</p>
       <div class="cfg-cam">${cam}</div>
+      <label class="switch" style="margin-top:16px"><input type="checkbox" id="cfg_mostrarEstoque" ${mostrarEstoquePublico()?'checked':''}> Mostrar quantidade de estoque para participantes</label>
+      <p style="color:var(--muted);font-size:12px;margin:6px 0 0">
+        Quando ativado, o formulário público mostra quantas camisas ainda estão disponíveis por tamanho
+        (ex: <b>6 disp.</b>). Desativado, o participante vê só <b>Disponível</b> ou <b>Indisponível</b>.
+        O balcão mostra o número exato sempre, dos dois jeitos.
+      </p>
       <div class="mini-field" style="max-width:340px;margin-top:16px">
         <label>Máximo de camisas por documento</label>
         <input type="number" min="1" max="50" step="1" id="cfg_maxCamisas" value="${maxCamisasPorDoc()}">
@@ -4012,6 +4025,12 @@ async function salvarConfig(){
     const v=parseInt(mx.value,10);
     if(!isNaN(v) && v>=1 && v<=50 && v!==maxCamisasPorDoc()) patch.maxCamisasPorDoc=v;
   }
+
+  /* MOSTRAR ESTOQUE AO PÚBLICO — mesma disciplina do campo acima: só entra no
+     patch se o organizador realmente mexeu. Ausente vale false, então nunca
+     gravamos `false` só para o campo existir. */
+  const me=el('cfg_mostrarEstoque');
+  if(me && me.checked!==mostrarEstoquePublico()) patch.mostrarEstoquePublico=me.checked;
 
   if(!Object.keys(patch).length){ toast("Nada mudou"); return; }
   await DB.patchSettings(patch);
