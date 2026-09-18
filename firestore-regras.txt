@@ -44,7 +44,13 @@ service cloud.firestore {
              && textoAte('pagamento', 20)
              && textoAte('genero', 30)
              && textoAte('origem', 20)
-             && textoAte('motivoDesconto', 200);
+             && textoAte('motivoDesconto', 200)
+             // Quem retirou o kit. Sem estes três limites, seriam campos de
+             // texto ILIMITADO graváveis por qualquer visitante — o site não
+             // tem login, e textoAte só protege o que está listado aqui.
+             && textoAte('retiradoPorTipo', 10)
+             && textoAte('retiradoPorNome', 120)
+             && textoAte('retiradoPorCpf', 14);
     }
 
     // ---------------- INSCRIÇÕES ----------------

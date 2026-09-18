@@ -1235,6 +1235,24 @@ const CONFIG = {
     { tam:"G", estoque:200 }, { tam:"GG", estoque:50 }
   ],
   vagasTotais:500,
+
+  /* EDIÇÃO PELO PARTICIPANTE — DESLIGADA POR PADRÃO. LEIA ANTES DE LIGAR.
+
+     Com `true`, quem consulta uma inscrição AINDA PENDENTE ganha um botão
+     para corrigir tamanho de camiseta, celular, e-mail, cidade, nascimento
+     e gênero. Nunca toca em valor, cupom, status, kit ou pagamento.
+
+     O RISCO: este site não tem login. A consulta pública já encontra uma
+     inscrição por CPF ou protocolo e já mostra nome, documento e telefone
+     para quem souber o CPF. Ligar a edição significa que essa mesma pessoa
+     também pode ALTERAR esses campos — trocar o tamanho de outro inscrito,
+     por exemplo. Não há como distinguir o dono da inscrição de um terceiro.
+
+     A exposição de leitura já existe hoje; a de escrita, não. Por isso a
+     decisão de ligar é do organizador, não do código. Toda edição fica
+     registrada em `eventos` como `edicao_participante`.                 */
+  edicaoParticipante:false,
+
   // Subiu para 8 junto com os links novos de cartão (3x sem juros).
   // Os ajustes ficam salvos no banco: sem trocar este número, o site
   // continuaria usando os links antigos que já estavam gravados lá.
@@ -1505,7 +1523,12 @@ const DB = {
       const p = { status:novoStatus };
       if(novoStatus==='confirmado' && antes!=='confirmado') p.confirmadoEm=Date.now();
       if(valido) p.estoqueBaixado = deve;
-      if(antes==='confirmado' && novoStatus!=='confirmado' && ins.kitRetirado){ p.kitRetirado=false; p.kitRetiradoEm=null; }
+      // Sair de confirmado desfaz a entrega — e leva junto quem retirou,
+      // senão fica nome/CPF de terceiro preso a uma entrega inexistente.
+      if(antes==='confirmado' && novoStatus!=='confirmado' && ins.kitRetirado){
+        p.kitRetirado=false; p.kitRetiradoEm=null;
+        p.retiradoPorTipo=null; p.retiradoPorNome=null; p.retiradoPorCpf=null;
+      }
 
       /* CUPOM — mesmo padrão do estoque, com marcador próprio.
          `cupomConsumido` diz se o uso desta inscrição está contado no cupom.
@@ -1647,6 +1670,135 @@ const DB = {
     localStorage.setItem(LS_INSC,JSON.stringify(a));
     localStorage.setItem(LS_SET,JSON.stringify(s));
     return { de:r.atual, para:r.novo, camiseta:Object.assign({},s.camiseta), patch:{ camiseta:r.novo } };
+  },
+
+  /* ---------------------------------------------------------------------
+     ENTREGA DO KIT + REGISTRO DE QUEM RETIROU.
+
+     Antes isto era `DB.update({kitRetirado:true, kitRetiradoEm:...})` solto,
+     sem trava. Como agora a entrega carrega DADOS (quem retirou), duas
+     gravações seguidas deixariam de ser inofensivas: o segundo clique
+     sobrescreveria o primeiro com outra resposta. Por isso virou transação.
+
+     A transação relê a inscrição e prova, sobre o estado ATUAL do banco:
+       status === 'confirmado'   → não se entrega kit de quem não pagou
+       kitRetirado !== true      → não se entrega duas vezes
+     Se outro aparelho entregou no meio do caminho, o Firestore reexecuta,
+     a segunda validação falha e o operador recebe "já foi entregue".
+
+     Nada de estoque, valor, cupom ou status é tocado. `kitRetirado`
+     continua sendo o marcador oficial — só ganhou companhia.
+
+     CPF do terceiro é gravado MASCARADO (000.000.000-00), igual ao
+     `documento`/`cpf` da própria inscrição: um padrão só na casa.       */
+  async registrarRetiradaKit(id, dados){
+    const montar = (ins) => {
+      if(!ins) throw erroKit('Inscrição não encontrada.');
+      if(ins.status!=='confirmado') throw erroKit('Só quem está confirmado pode retirar o kit.');
+      if(ins.kitRetirado === true)  throw erroKit('Este kit já foi entregue. Se foi engano, use "corrigir".');
+
+      const tipo = (dados && dados.tipo)==='terceiro' ? 'terceiro' : 'proprio';
+      const p = { kitRetirado:true, kitRetiradoEm:Date.now(), retiradoPorTipo:tipo,
+                  retiradoPorNome:null, retiradoPorCpf:null };
+      if(tipo==='terceiro'){
+        const nome=String((dados&&dados.nome)||'').trim();
+        const cpf =String((dados&&dados.cpf)||'').trim();
+        if(!nomeCompleto(nome)) throw erroKit('Informe o nome completo de quem está retirando.');
+        if(!cpfValido(cpf))     throw erroKit('CPF de quem está retirando é inválido.');
+        p.retiradoPorNome = nome;
+        p.retiradoPorCpf  = mascaraCPF(cpf);   // sempre 000.000.000-00
+      }
+      return p;
+    };
+    if(fdb){
+      const refI=fdb.collection("inscricoes").doc(id);
+      return await fdb.runTransaction(async t=>{
+        const d=await t.get(refI);
+        const p=montar(d.exists?d.data():null);
+        t.update(refI, p);
+        return { patch:p };
+      });
+    }
+    const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    const ins=a.find(x=>x._id===id);
+    const p=montar(ins||null);
+    Object.assign(ins,p); localStorage.setItem(LS_INSC,JSON.stringify(a));
+    return { patch:p };
+  },
+
+  /* Desfazer a entrega. Limpa TAMBÉM quem retirou — deixar o nome de um
+     terceiro apontando para uma entrega que não existe mais seria dado
+     órfão, e ainda por cima dado pessoal de quem nem é inscrito. */
+  async desfazerRetiradaKit(id){
+    const p={ kitRetirado:false, kitRetiradoEm:null,
+              retiradoPorTipo:null, retiradoPorNome:null, retiradoPorCpf:null };
+    if(fdb){ await fdb.collection("inscricoes").doc(id).update(p); return { patch:p }; }
+    const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    const i=a.find(x=>x._id===id);
+    if(i){ Object.assign(i,p); localStorage.setItem(LS_INSC,JSON.stringify(a)); }
+    return { patch:p };
+  },
+
+  /* ---------------------------------------------------------------------
+     EDIÇÃO PELO PRÓPRIO PARTICIPANTE — só enquanto NINGUÉM mexeu ainda.
+
+     A inscrição feita pelo site nasce `pendente` e com `baixarTam` nulo:
+     ela NÃO tem estoque baixado (quem baixa é a confirmação do pagamento,
+     no moverStatus). Por isso trocar o tamanho aqui é só trocar o campo —
+     nenhuma aritmética de estoque, nenhum contador. É justamente essa
+     janela, antes de qualquer ação da organização, que é segura.
+
+     A porta fecha assim que a organização processa a inscrição. Três
+     marcadores, todos relidos DENTRO da transação:
+       status !== 'pendente'   → pagamento confirmado ou cancelado
+       kitRetirado             → kit já saiu
+       estoqueBaixado          → já existe camiseta reservada (balcão pago)
+
+     Só os campos da lista branca entram. Qualquer outro é descartado em
+     silêncio — nem valor, nem cupom, nem status, nem protocolo, nem
+     documento, nem nome. Documento e nome ficam de fora de propósito:
+     são a identidade da inscrição, e trocá-los transformaria a correção
+     num sequestro de vaga.                                              */
+  async editarPeloParticipante(id, campos){
+    const PERMITIDOS = ['camiseta','celular','email','cidade','nascimento','genero'];
+    const validos = CONFIG.camisetas.map(c=>c.tam);
+
+    const montar = (ins) => {
+      if(!ins) throw erroEdicao('Inscrição não encontrada.');
+      if(ins.status!=='pendente' || ins.kitRetirado === true || ins.estoqueBaixado === true)
+        throw erroEdicao('Esta inscrição já foi processada pela organização e não pode mais ser editada. Entre em contato com a organização.');
+      const p={};
+      for(const k of PERMITIDOS){
+        if(!(k in campos)) continue;
+        let v = campos[k];
+        v = (v==null?'':String(v)).trim();
+        if(k==='camiseta'){
+          if(validos.indexOf(v)<0) throw erroEdicao('Tamanho inválido.');
+          if(restanteTam(v)<=0 && v!==ins.camiseta) throw erroEdicao('Não há estoque disponível para este tamanho.');
+        }
+        if(k==='celular' && soDigitos(v).length<10) throw erroEdicao('Celular inválido — use DDD + número.');
+        if(v!==String(ins[k]==null?'':ins[k])) p[k]=v;
+      }
+      if(!Object.keys(p).length) throw erroEdicao('Nada foi alterado.');
+      p.editadoEm = Date.now();   // trilha mínima: quando a pessoa corrigiu
+      return p;
+    };
+
+    if(fdb){
+      const refI=fdb.collection("inscricoes").doc(id);
+      return await fdb.runTransaction(async t=>{
+        const d=await t.get(refI);
+        const p=montar(d.exists?d.data():null);
+        t.update(refI, p);
+        return { patch:p };
+      });
+    }
+    const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    const ins=a.find(x=>x._id===id);
+    const p=montar(ins||null);
+    Object.assign(ins,p);
+    localStorage.setItem(LS_INSC,JSON.stringify(a));
+    return { patch:p };
   },
 
   /* ---------------- CUPONS ---------------- */
@@ -1957,6 +2109,10 @@ function erroCupom(msg){ const e=new Error(msg); e.cupomInvalido=true; return e;
 /* Erro de validação da troca de camiseta: a tela mostra a mensagem como
    está, em vez do alerta genérico de "não foi possível salvar". */
 function erroTroca(msg){ const e=new Error(msg); e.trocaInvalida=true; return e; }
+/* Idem para a edição feita pelo próprio participante. */
+function erroEdicao(msg){ const e=new Error(msg); e.edicaoInvalida=true; return e; }
+/* Idem para a entrega do kit. */
+function erroKit(msg){ const e=new Error(msg); e.kitInvalido=true; return e; }
 
 /*  everest10  ·  Everest10  ·  " EVEREST10 "  →  EVEREST10  */
 function normCupom(s){ return String(s||'').trim().toUpperCase().replace(/\s+/g,''); }
@@ -2357,6 +2513,8 @@ function renderConsulta(lista, termo){
     return;
   }
   lista.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+  // Guarda o que já foi lido para a edição não precisar consultar de novo.
+  edPartCache={}; lista.forEach(i=>{ if(i._id) edPartCache[i._id]=i; });
   alvo.innerHTML = lista.map(i=>{
     const pend = i.status==='pendente', canc = i.status==='cancelado', conf = i.status==='confirmado';
     const badge = canc ? '<span class="badge b-canc">cancelada</span>'
@@ -2389,6 +2547,19 @@ function renderConsulta(lista, termo){
       <svg viewBox="0 0 24 24"><path d="M17.6 6.32A7.85 7.85 0 0 0 12.05 4 7.94 7.94 0 0 0 4.1 11.9a7.8 7.8 0 0 0 1.06 3.96L4 20l4.25-1.11a7.94 7.94 0 0 0 3.8.97 7.94 7.94 0 0 0 7.95-7.9 7.85 7.85 0 0 0-2.4-5.64Zm-5.54 12.18a6.6 6.6 0 0 1-3.36-.92l-.24-.14-2.5.65.67-2.43-.16-.25a6.55 6.55 0 0 1-1-3.49 6.6 6.6 0 1 1 6.6 6.57Z"/></svg>
       <span>${pend?'Enviar comprovante no WhatsApp':'Falar com a Everest'}</span></a>`;
 
+    /* Correção pelo próprio participante — só com CONFIG.edicaoParticipante
+       ligado E enquanto a organização não mexeu. A mesma condição é relida
+       dentro da transação; isto aqui é só a tela. */
+    if(CONFIG.edicaoParticipante && podeEditarParticipante(i)){
+      acoes += `<button class="btn btn-ghost" style="justify-content:center;margin-top:8px;padding:12px"
+        onclick="abrirEdicaoParticipante('${esc(i._id)}')"><span>Corrigir meus dados</span></button>
+        <div id="edPart_${esc(i._id)}" style="display:none"></div>`;
+    } else if(CONFIG.edicaoParticipante && !canc){
+      acoes += `<p style="color:var(--muted);font-size:11.5px;text-align:center;margin-top:10px;line-height:1.5">
+        Esta inscrição já foi processada pela organização e não pode mais ser editada.<br>
+        Precisa corrigir algo? Fale com a gente pelo WhatsApp.</p>`;
+    }
+
     return `<div class="cons-card">
       <div class="cons-topo">
         <div>
@@ -2418,6 +2589,85 @@ function renderConsulta(lista, termo){
       Use isto só se for inscrever <b>outra pessoa</b> ou se combinou com a organização.</p>`;
   }
 }
+/* ═══════════ EDIÇÃO PELO PARTICIPANTE (consulta pública) ═══════════
+   A janela segura é exatamente a mesma que a transação exige: pendente,
+   sem kit retirado e sem estoque baixado. Repetida aqui só para a tela
+   saber se mostra o botão — a autoridade é o DB.editarPeloParticipante. */
+function podeEditarParticipante(i){
+  return !!(i && i.status==='pendente' && i.kitRetirado!==true && i.estoqueBaixado!==true);
+}
+let edPartCache={};
+function abrirEdicaoParticipante(id){
+  const box=el('edPart_'+id); if(!box) return;
+  const abrindo = box.style.display==='none';
+  box.style.display = abrindo ? 'block' : 'none';
+  if(abrindo) renderEdicaoParticipante(id);
+}
+function renderEdicaoParticipante(id, msg, ruim){
+  const box=el('edPart_'+id); if(!box) return;
+  const i=edPartCache[id]; if(!i) return;
+  const aviso = msg ? `<div class="cupom-msg ${ruim?'ruim':'bom'}" style="margin-bottom:10px">${msg}</div>` : '';
+  const tams=CONFIG.camisetas.map(c=>{
+    const n=restanteTam(c.tam), atual=c.tam===i.camiseta, sem=n<=0&&!atual;
+    return `<button type="button" class="size ${atual?'sel':''} ${sem?'off':''}" style="min-width:58px;padding:8px 5px"
+      ${sem?'disabled':''} onclick="edPartTam('${esc(id)}','${esc(c.tam)}')">
+      <b style="font-size:17px">${esc(c.tam)}</b>
+      <small style="display:block;font-size:10.5px;color:${sem?'var(--err)':'var(--muted)'}">${atual?'atual':(sem?'esgotado':n)}</small></button>`;
+  }).join('');
+  box.innerHTML=`<div style="margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.04)">
+    <div style="font-weight:800;font-style:italic;text-transform:uppercase;font-size:12.5px;color:var(--amarelo);margin-bottom:4px">Corrigir meus dados</div>
+    <p style="color:var(--muted);font-size:11.5px;margin:0 0 12px">Só enquanto o pagamento não foi confirmado.
+      Valor, forma de pagamento e protocolo não mudam.</p>
+    ${aviso}
+    <div style="color:var(--muted);font-size:11.5px;margin-bottom:6px">Tamanho da camiseta</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px">${tams}</div>
+    <div class="form-grid">
+      <div class="field"><label>Celular</label><input id="ep_cel_${esc(id)}" type="text" inputmode="numeric" maxlength="15" value="${esc(i.celular||'')}"></div>
+      <div class="field"><label>Cidade</label><input id="ep_cid_${esc(id)}" type="text" maxlength="80" value="${esc(i.cidade||'')}"></div>
+      <div class="field"><label>E-mail</label><input id="ep_mail_${esc(id)}" type="email" maxlength="120" value="${esc(i.email||'')}"></div>
+      <div class="field"><label>Nascimento</label><input id="ep_nasc_${esc(id)}" type="date" value="${esc(i.nascimento||'')}"></div>
+    </div>
+    <button class="btn btn-cta" style="width:100%;justify-content:center;margin-top:12px;padding:13px"
+      onclick="salvarEdicaoParticipante('${esc(id)}')"><span>Salvar correção</span></button>
+  </div>`;
+  const c=el('ep_cel_'+id); if(c) c.addEventListener('input',e=>e.target.value=mascaraTel(e.target.value));
+}
+function edPartTam(id, tam){
+  const i=edPartCache[id]; if(!i) return;
+  i._novoTam = tam;
+  renderEdicaoParticipante(id, 'Tamanho <b>'+esc(tam)+'</b> selecionado. Clique em salvar para confirmar.', false);
+  // marca visualmente o escolhido sem perder o "atual" do banco
+  const b=el('edPart_'+id); if(b) b.querySelectorAll('.size').forEach(x=>{
+    x.classList.toggle('sel', x.querySelector('b') && x.querySelector('b').textContent===tam);
+  });
+}
+const edPartOcupado = new Set();
+async function salvarEdicaoParticipante(id){
+  if(edPartOcupado.has(id)){ toast('Espere — ainda estou salvando'); return; }
+  const i=edPartCache[id]; if(!i) return;
+  const campos={
+    camiseta: i._novoTam || i.camiseta,
+    celular:  (el('ep_cel_'+id)||{}).value,
+    cidade:   (el('ep_cid_'+id)||{}).value,
+    email:    (el('ep_mail_'+id)||{}).value,
+    nascimento:(el('ep_nasc_'+id)||{}).value
+  };
+  edPartOcupado.add(id);
+  try{
+    const r=await comPrazo(DB.editarPeloParticipante(id, campos), 15000);
+    Object.assign(i, r.patch); delete i._novoTam;
+    DB.evento('edicao_participante');
+    renderEdicaoParticipante(id, 'Pronto — seus dados foram corrigidos.', false);
+    toast('Inscrição corrigida ✓');
+    buscarConsulta();   // recarrega o cartão com os dados novos
+  }catch(e){
+    console.error(e);
+    if(e && e.edicaoInvalida) renderEdicaoParticipante(id, esc(e.message), true);
+    else if(e && e.semResposta) renderEdicaoParticipante(id, 'Sem resposta do servidor. Consulte de novo antes de tentar outra vez.', true);
+    else renderEdicaoParticipante(id, 'Não consegui salvar agora. Confira a internet e tente de novo.', true);
+  }finally{ edPartOcupado.delete(id); }
+}
+
 function renderThumbs(){
   const fs=fotosGal(), c=el('thumbs'), dica=el('thumbsDica');
   if(!fs.length){ c.style.display='none'; dica.style.display='none'; return; }
@@ -2636,9 +2886,20 @@ async function passo(n){
     if(!el('fTermo').checked){ ok=false; if(!aviso) aviso='Você precisa aceitar o regulamento'; }
     if(!ok){ toast(aviso); DB.evento("erro_formulario"); return; }
 
-    /* Já existe inscrição com esse documento? Avisa antes de deixar seguir.
-       Não bloqueia: pode ser segunda inscrição legítima (a primeira foi
-       cancelada, ou a pessoa está inscrevendo um familiar por engano). */
+    /* Já existe inscrição com esse documento? BLOQUEIA.
+
+       Antes isto era só um aviso, com um botão "quero me inscrever mesmo
+       assim" logo abaixo. O resultado prático foi gente criando duas, três,
+       quatro inscrições do mesmo CPF — que depois alguém tem que reconciliar
+       à mão, decidindo qual vale e qual foi engano.
+
+       Agora o fluxo PARA aqui e leva para a consulta. Documento cancelado
+       não conta (o filtro de `status!=='cancelado'` continua): quem cancelou
+       e quer se inscrever de novo passa normalmente.
+
+       Isto NÃO é garantia de unicidade — é a trava do fluxo normal. Duas
+       abas submetendo ao mesmo tempo ainda podem passar as duas; o Firestore
+       não tem índice único por campo. Ver o relatório para a proposta. */
     const btnRes=el('btnResumo');
     if(btnRes){ btnRes.disabled=true; btnRes.innerHTML='<span>Conferindo...</span>'; }
     let iguais=[];
@@ -2648,14 +2909,19 @@ async function passo(n){
 
     const ativas = iguais.filter(i=>i.status!=='cancelado');
     if(ativas.length){
-      DB.evento('aviso_documento_repetido');
+      DB.evento('bloqueio_documento_repetido');
       const tipo = el('fDocTipo').value;
-      abrirConsulta(el('fDoc').value,
-        `<b>Você já tem inscrição nesta corrida.</b><br>
-         Encontrei ${ativas.length===1?'uma inscrição':ativas.length+' inscrições'} com este ${esc(tipo)}.
-         Confira abaixo o status — se estiver aguardando pagamento, é só reenviar o comprovante.
-         <b>Não precisa se inscrever de novo.</b>`,
-        true);
+      const aviso = ativas.length===1
+        ? `<b>Você já possui uma inscrição na ${esc(CONFIG.evento.nome)}.</b><br>
+           Encontramos sua inscrição — confira abaixo o protocolo e o status.
+           Se estiver aguardando pagamento, é só enviar o comprovante no WhatsApp.
+           <b>Não é preciso se inscrever de novo.</b>`
+        : `<b>Você já possui ${ativas.length} inscrições na ${esc(CONFIG.evento.nome)}.</b><br>
+           Encontramos mais de uma inscrição com este ${esc(tipo)}. Confira abaixo.
+           <b>Procure a organização pelo WhatsApp</b> para definir qual delas vale —
+           não crie outra inscrição.`;
+      // permitirNova = false: sem a saída "quero me inscrever mesmo assim".
+      abrirConsulta(el('fDoc').value, aviso, false);
       return;
     }
 
@@ -2848,6 +3114,22 @@ function msgSituacao(i){
             `Te espero lá. *Bora pro topo!*` };
   }
 
+  /* BRINDE — confirmado, mas ninguém pagou nada.
+     Dizer "Pagamento confirmado / Valor pago: R$ 0,00" para quem ganhou
+     seria falso e esquisito de receber. Mesma estrutura da mensagem de
+     confirmação (retirada do kit, data, endereço), só a abertura muda. */
+  if(i.brinde===true){
+    return { rotulo:'Avisar que pode retirar o kit', cor:'sit-conf',
+      texto:`${topo}\n_Inscrição cortesia_\n\n`+
+            `Oi ${nome}, sua inscrição foi concedida como *cortesia (BRINDE)*.\n`+
+            `Não há nada a pagar — sua vaga já está garantida.\n\n`+
+            `${dados}\n*Valor:* R$ 0,00\n\n`+
+            `*Retirada do kit*\nA partir de ${ev.retiradaKit}, na recepção da Everest\n${ev.endereco}\n`+
+            `_É só informar seu nome ou o protocolo_\n\n`+
+            `*A corrida*\n${ev.data} · ${ev.horario}\n\n`+
+            `*Bora pro topo!*` };
+  }
+
   return { rotulo:'Avisar que pode retirar o kit', cor:'sit-conf',
     texto:`${topo}\n_Pagamento confirmado_\n\n`+
           `Oi ${nome}, tudo certo! Sua vaga está garantida.\n\n`+
@@ -2913,7 +3195,7 @@ function renderAdmin(){
       </div>
       <div class="etapa ${kitOk?'ok':(alerta?'alerta':'')}">
         <span class="et-num">2</span>
-        <div><b>Kit</b><small>${kitOk?('entregue em '+dataBR(i.kitRetiradoEm)):(pagoOk?('não retirado'+(alerta?' · pago '+textoDias(i.confirmadoEm||i.criadoEm):'')):'libera após o pagamento')}</small></div>
+        <div><b>Kit</b><small>${kitOk?('entregue em '+dataBR(i.kitRetiradoEm)+retiradoPorTxt(i)):(pagoOk?('não retirado'+(alerta?' · pago '+textoDias(i.confirmadoEm||i.criadoEm):'')):'libera após o pagamento')}</small></div>
       </div>
     </div>`;
   };
@@ -2940,7 +3222,8 @@ function renderAdmin(){
       <td style="min-width:200px">${etapas(i)}</td>
       <td style="white-space:nowrap">${acoes(i)}</td></tr>
       ${i.status==='pendente'?`<tr id="cupRow_${i._id}" style="display:none"><td colspan="7" style="background:rgba(255,255,255,.03)"><div id="cupBox_${i._id}"></div></td></tr>`:''}
-      ${i.status==='confirmado'?`<tr id="tamRow_${i._id}" style="display:none"><td colspan="7" style="background:rgba(255,255,255,.03)"><div id="tamBox_${i._id}"></div></td></tr>`:''}`;
+      ${i.status==='confirmado'?`<tr id="tamRow_${i._id}" style="display:none"><td colspan="7" style="background:rgba(255,255,255,.03)"><div id="tamBox_${i._id}"></div></td></tr>`:''}
+      ${i.status==='confirmado'&&!i.kitRetirado?`<tr id="kitRow_${i._id}" style="display:none"><td colspan="7" style="background:rgba(255,255,255,.03)"><div id="kitBox_${i._id}"></div></td></tr>`:''}`;
   }).join("");
 
   el('admCards').innerHTML=mostrando.map(i=>{
@@ -2962,6 +3245,7 @@ function renderAdmin(){
       <div class="ic-acoes">${acoes(i)}</div>
       ${i.status==='pendente'?`<div id="cupCard_${i._id}" style="display:none"><div id="cupBoxC_${i._id}"></div></div>`:''}
       ${i.status==='confirmado'?`<div id="tamCard_${i._id}" style="display:none"><div id="tamBoxC_${i._id}"></div></div>`:''}
+      ${i.status==='confirmado'&&!i.kitRetirado?`<div id="kitCard_${i._id}" style="display:none"><div id="kitBoxC_${i._id}"></div></div>`:''}
     </div>`;
   }).join("");
 
@@ -2976,22 +3260,108 @@ function renderAdmin(){
 }
 function verMais(){ admLimite+=20; renderAdmin(); }
 
-async function toggleKit(id){
+/* ═══════════ ENTREGA DO KIT — "quem retirou?" ═══════════
+   Um confirm() não comporta escolha + dois campos, então a entrega virou
+   painel embutido, no mesmo padrão já usado no cupom e na troca de tamanho:
+   duas faces (tabela no desktop, cartão no celular), alternadas pelo CSS.
+   Abrir o painel NÃO lê o Firestore — usa o admCache que já está em memória. */
+/* Texto de "quem retirou" para o PAINEL ADMINISTRATIVO.
+   Inscrição antiga (anterior a esta funcionalidade) não tem
+   `retiradoPorTipo` — devolve string vazia e a tela fica como sempre foi.
+   ATENÇÃO: contém CPF de terceiro. Nunca use isto na consulta pública. */
+function retiradoPorTxt(i){
+  if(!i || !i.kitRetirado) return '';
+  if(i.retiradoPorTipo==='proprio')  return ' · pela própria pessoa';
+  if(i.retiradoPorTipo==='terceiro' && i.retiradoPorNome)
+    return ' · retirado por '+esc(i.retiradoPorNome)+(i.retiradoPorCpf?' — CPF '+esc(i.retiradoPorCpf):'');
+  return '';
+}
+function faceKitInsc(id){
+  const wrap=document.querySelector('.tbl-wrap');
+  const tabelaVisivel = wrap && getComputedStyle(wrap).display !== 'none';
+  return tabelaVisivel
+    ? { alvo:el('kitRow_'+id),  box:el('kitBox_'+id),  display:'table-row' }
+    : { alvo:el('kitCard_'+id), box:el('kitBoxC_'+id), display:'block' };
+}
+function toggleKit(id){
   const i=admCache.find(x=>x._id===id); if(!i) return;
   if(i.status!=='confirmado'){ toast("Só quem está confirmado pode retirar o kit"); return; }
   if(i.kitRetirado){ toast("Kit já entregue. Se foi engano, use 'corrigir'."); return; }
-  if(!confirm("ENTREGAR O KIT\n\n"+i.nome+"\nCamiseta: "+(i.camiseta||'—')+"\n"+docTipoDe(i)+" "+docDe(i)+"\n\nConfirmar entrega?")) return;
-  await DB.update(id,{kitRetirado:true, kitRetiradoEm:Date.now()});
-  i.kitRetirado=true; i.kitRetiradoEm=Date.now();
-  renderAdmin(); toast("Kit entregue para "+(i.nome||'').split(' ')[0]+" ✓");
+  const f=faceKitInsc(id); if(!f.alvo) return;
+  const abrindo = f.alvo.style.display==='none';
+  f.alvo.style.display = abrindo ? f.display : 'none';
+  if(abrindo){ kitTipoSel[id]=null; renderKitInsc(id); }
+}
+const kitTipoSel={};
+function escolherRetirante(id, tipo){ kitTipoSel[id]=tipo; renderKitInsc(id); }
+function renderKitInsc(id, msg, ruim){
+  const box=faceKitInsc(id).box; if(!box) return;
+  const i=admCache.find(x=>x._id===id); if(!i) return;
+  const tipo=kitTipoSel[id]||null;
+  const aviso = msg ? `<div class="cupom-msg ${ruim?'ruim':'bom'}" style="margin-bottom:10px">${msg}</div>` : '';
+  const campos = tipo==='terceiro' ? `
+    <div class="form-grid" style="margin-top:12px">
+      <div class="field"><label>Nome de quem está retirando <span class="req">*</span></label>
+        <input id="kn_${esc(id)}" type="text" maxlength="80" placeholder="Nome e sobrenome" autocomplete="off"></div>
+      <div class="field"><label>CPF de quem está retirando <span class="req">*</span></label>
+        <input id="kc_${esc(id)}" type="text" inputmode="numeric" maxlength="14" placeholder="000.000.000-00"></div>
+    </div>` : '';
+  box.innerHTML=`<div style="padding:12px 4px">
+    <div style="font-weight:800;font-style:italic;text-transform:uppercase;font-size:13px;color:var(--amarelo);margin-bottom:4px">Quem retirou o kit?</div>
+    <p style="color:var(--muted);font-size:12px;margin:0 0 10px">${esc(i.nome)} · camiseta <b style="color:#fff">${esc(i.camiseta)||'—'}</b> · ${docTipoDe(i)} ${esc(docDe(i))||'—'}</p>
+    ${aviso}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="mini ${tipo==='proprio'?'ok':'leve'}" onclick="escolherRetirante('${esc(id)}','proprio')">A própria pessoa</button>
+      <button type="button" class="mini ${tipo==='terceiro'?'ok':'leve'}" onclick="escolherRetirante('${esc(id)}','terceiro')">Outra pessoa</button>
+    </div>
+    ${campos}
+    ${tipo?`<button class="btn btn-cta" style="width:100%;justify-content:center;margin-top:12px;padding:12px"
+       onclick="confirmarEntregaKit('${esc(id)}')"><span>Confirmar entrega</span></button>`:''}
+  </div>`;
+  if(tipo==='terceiro'){
+    const c=el('kc_'+id); if(c) c.addEventListener('input',e=>e.target.value=mascaraCPF(e.target.value));
+    const n=el('kn_'+id); if(n) setTimeout(()=>n.focus(),60);
+  }
+}
+async function confirmarEntregaKit(id){
+  if(emAndamento.has(id)){ toast("Espere — esta inscrição ainda está sendo salva"); return; }
+  const i=admCache.find(x=>x._id===id); if(!i) return;
+  const tipo=kitTipoSel[id];
+  if(!tipo){ renderKitInsc(id,'Escolha quem está retirando.',true); return; }
+  const nome = tipo==='terceiro' ? ((el('kn_'+id)||{}).value||'').trim() : '';
+  const cpf  = tipo==='terceiro' ? ((el('kc_'+id)||{}).value||'').trim() : '';
+  if(tipo==='terceiro'){
+    if(!nomeCompleto(nome)){ renderKitInsc(id,'Informe o nome completo de quem está retirando.',true); return; }
+    if(!cpfValido(cpf)){ renderKitInsc(id,'CPF de quem está retirando é inválido.',true); return; }
+  }
+  if(!confirm("ENTREGAR O KIT\n\n"+i.nome+"\nCamiseta: "+(i.camiseta||'—')+"\n\n"+
+      (tipo==='terceiro' ? "Retirado por TERCEIRO:\n"+nome+"\nCPF "+mascaraCPF(cpf)
+                         : "Retirado pela PRÓPRIA pessoa inscrita.")+"\n\nConfirmar entrega?")) return;
+  emAndamento.add(id);
+  try{
+    const r=await comPrazo(DB.registrarRetiradaKit(id,{tipo,nome,cpf}), 15000);
+    Object.assign(i, r.patch);
+    const f=faceKitInsc(id); if(f.alvo) f.alvo.style.display='none';
+    delete kitTipoSel[id];
+    renderAdmin();
+    toast("Kit entregue para "+(tipo==='terceiro'?nome.split(' ')[0]:(i.nome||'').split(' ')[0])+" ✓");
+  }catch(e){
+    console.error(e);
+    if(e && e.kitInvalido) renderKitInsc(id, esc(e.message), true);
+    else if(e && e.semResposta) alert("SEM RESPOSTA DO SERVIDOR\n\nA entrega de "+i.nome+" pode ter sido gravada ou não.\n\nClique em Atualizar e confira antes de tentar de novo.");
+    else alert("NÃO FOI POSSÍVEL REGISTRAR A ENTREGA\n\nNada foi alterado em "+i.nome+".\n\nConfira a internet e tente de novo.");
+  }finally{ emAndamento.delete(id); }
 }
 
 async function desfazerKit(id){
   const i=admCache.find(x=>x._id===id); if(!i||!i.kitRetirado) return;
-  if(!confirm("DESFAZER A ENTREGA DO KIT\n\n"+i.nome+"\nEntregue em "+dataBR(i.kitRetiradoEm)+"\n\nFaça isso apenas se marcou por engano.\nContinuar?")) return;
-  if(!confirm("Confirma mesmo? O kit volta para 'não retirado'.")) return;
-  await DB.update(id,{kitRetirado:false, kitRetiradoEm:null});
-  i.kitRetirado=false; i.kitRetiradoEm=null;
+  const quem = i.retiradoPorTipo==='terceiro' && i.retiradoPorNome
+    ? "\nRetirado por: "+i.retiradoPorNome+(i.retiradoPorCpf?" — CPF "+i.retiradoPorCpf:"") : "";
+  if(!confirm("DESFAZER A ENTREGA DO KIT\n\n"+i.nome+"\nEntregue em "+dataBR(i.kitRetiradoEm)+quem+
+              "\n\nFaça isso apenas se marcou por engano.\nContinuar?")) return;
+  if(!confirm("Confirma mesmo? O kit volta para 'não retirado' e o registro de quem retirou é apagado.")) return;
+  const r=await DB.desfazerRetiradaKit(id);
+  Object.assign(i, r.patch);
   renderAdmin(); toast("Entrega corrigida");
 }
 
@@ -3594,13 +3964,17 @@ function caixaDoDia(){
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const lista=admCache.filter(i=>i.origem==='balcao' && i.status!=='cancelado' &&
     (caixaPeriodo==='tudo' || (i.criadoEm||0)>=hoje.getTime()));
-  const porPag={}; let total=0, descontos=0, cupons=0, comCupom=0;
+  const porPag={}; let total=0, descontos=0, cupons=0, comCupom=0, brindes=0;
   lista.forEach(i=>{ if(i.status==='confirmado'){
-    porPag[i.pagamento]=(porPag[i.pagamento]||0)+(i.valor||0);
-    total+=(i.valor||0); descontos+=(i.desconto||0);
+    // Brinde entra na contagem própria, não em porPag: aquela linha soma
+    // DINHEIRO por forma de pagamento, e "Brinde — R$ 0,00" daria a
+    // entender que é uma forma de pagamento que rendeu zero.
+    if(i.brinde===true) brindes++;
+    else porPag[i.pagamento]=(porPag[i.pagamento]||0)+(i.valor||0);
+    total+=(i.valor||0); descontos+=(i.desconto||0);   // brinde soma 0 nos dois
     if(i.cupom){ cupons+=(i.cupomDesconto||0); comCupom++; }
   }});
-  return { qtd:lista.length, total, porPag, descontos, cupons, comCupom };
+  return { qtd:lista.length, total, porPag, descontos, cupons, comCupom, brindes };
 }
 function setCaixaPeriodo(p){ caixaPeriodo=p; renderBalcao(); }
 function renderBalcao(){
@@ -3618,7 +3992,8 @@ function renderBalcao(){
         </div>
       </div>
       <div class="cx-linha"><span>Inscrições ${caixaPeriodo==='hoje'?'de hoje':'no total'}</span><b>${cx.qtd}</b></div>
-      ${Object.entries(cx.porPag).map(([k,v])=>`<div class="cx-linha"><span>${k}</span><b>${BRL(v)}</b></div>`).join('')||'<div class="cx-linha"><span>Nenhuma venda ainda</span><b>—</b></div>'}
+      ${Object.entries(cx.porPag).map(([k,v])=>`<div class="cx-linha"><span>${k}</span><b>${BRL(v)}</b></div>`).join('')||(cx.brindes?'':'<div class="cx-linha"><span>Nenhuma venda ainda</span><b>—</b></div>')}
+      ${cx.brindes?`<div class="cx-linha"><span>Brindes</span><b style="color:var(--ok)">${cx.brindes} ${cx.brindes===1?'inscrição':'inscrições'}</b></div>`:''}
       ${cx.descontos>0?`<div class="cx-linha"><span>Descontos concedidos</span><b style="color:var(--alerta)">− ${BRL(cx.descontos)}</b></div>`:''}
       ${cx.cupons>0?`<div class="cx-linha"><span>Cupons (${cx.comCupom})</span><b style="color:var(--alerta)">− ${BRL(cx.cupons)}</b></div>`:''}
       <div class="cx-linha cx-total"><span>Total recebido</span><b>${BRL(cx.total)}</b></div>
@@ -3696,6 +4071,8 @@ function renderBalcao(){
         </div>
       </details>
 
+      <label class="checkrow" style="margin-top:16px"><input type="checkbox" id="balBrinde" onchange="atualizaBrindeBal()">
+        <span><b>BRINDE</b> — inscrição concedida gratuitamente. <small style="color:var(--muted)">Valor R$ 0,00, não entra como receita; o estoque baixa normalmente.</small></span></label>
       <label class="checkrow" style="margin-top:16px"><input type="checkbox" id="balPago" checked>
         <span><b>Pagamento já recebido</b> — a inscrição entra confirmada e o estoque baixa na hora.</span></label>
       <label class="checkrow"><input type="checkbox" id="balKit">
@@ -3816,7 +4193,35 @@ async function btnCupomBalcao(){
     }
   } finally { btn.disabled=false; atualizaValorBal(); }
 }
+/* BRINDE ligado: some tudo que é cobrança. Desconto, cupom, formas de
+   pagamento e troco deixam de fazer sentido numa inscrição de R$ 0,00 —
+   e deixá-los ativos só criaria estado contraditório para o operador.
+   O motivo continua editável: é onde se registra por que foi dado. */
+function atualizaBrindeBal(){
+  const cb=el('balBrinde'); if(!cb) return;
+  const on=cb.checked;
+  if(on && balCupom) limparCupomBal('Cupom removido: brinde já é gratuito.');
+  const dd=el('balDesconto'); if(dd && on) dd.value='';
+  [['balDescBox',1],['balCupomBox',1]].forEach(([id])=>{
+    const x=el(id); if(!x) return;
+    x.style.display = on ? 'none' : '';
+    if(on) x.removeAttribute('open');
+  });
+  ['balPag','balTrocoBox','balCartaoNota'].forEach(id=>{
+    const x=el(id); if(x) x.style.display = on ? 'none' : (id==='balCartaoNota' ? 'none' : '');
+  });
+  const pago=el('balPago'); if(pago){ pago.disabled=on; if(on) pago.checked=true; }
+  const nota=el('balValorNota');
+  if(on){
+    el('balValorFinal').textContent=BRL(0);
+    if(nota) nota.innerHTML='<b style="color:var(--ok)">BRINDE</b> — gratuita, não entra como receita';
+  } else atualizaValorBal();
+}
+
 function atualizaValorBal(){
+  if(el('balBrinde') && el('balBrinde').checked){
+    el('balValorFinal').textContent=BRL(0); return;   // brinde manda no valor
+  }
   // Trava de exclusividade: se o operador digitar desconto com cupom aplicado,
   // o desconto é recusado na hora, com aviso. Nunca os dois somam.
   if(balCupom && descontoBal()>0){
@@ -3906,17 +4311,41 @@ async function salvarBalcao(){
   const jaTem=admCache.find(i=>i.status!=='cancelado' && chaveDoc(i)===chave);
   if(jaTem && !confirm("ATENÇÃO\n\nJá existe inscrição com esse documento:\n"+jaTem.nome+" ("+jaTem.protocolo+")\n\nCadastrar mesmo assim?")) return;
 
-  const pago=el('balPago').checked, entregarAgora=pago && el('balKit').checked;
-  const forma=balPagEscolhido();
+  /* BRINDE — inscrição concedida de graça.
+
+     Financeiro: `valor` 0, `pagamento` 'Brinde', sem cupom e sem desconto
+     manual. Como toda soma de dinheiro do sistema parte de `valor` sobre
+     status confirmado (receita no painel, receita e "a receber" na
+     auditoria, caixa do balcão), somar zero já resolve: NENHUMA fórmula
+     precisou mudar. `valorCheio` guarda quanto teria custado — é o que
+     mostra o tamanho do benefício concedido, sem virar desconto.
+
+     `desconto` fica em 0 de propósito: desconto e brinde são coisas
+     diferentes no relatório, e inflar `descTotal` com o valor do brinde
+     misturaria as duas.
+
+     Logística: é uma inscrição completa. Entra CONFIRMADA e o estoque
+     baixa pelo MESMO caminho atômico da venda paga (`baixarTam` +
+     `criarComEstoque`). Brinde não é "ignorar estoque" — a camiseta
+     física sai da caixa igual.                                          */
+  const brinde=el('balBrinde').checked;
+  const pago=brinde ? true : el('balPago').checked;
+  const entregarAgora=pago && el('balKit').checked;
+  const forma=brinde ? 'Brinde' : balPagEscolhido();
   if(forma==='Cartão' && balCupom) limparCupomBal('Cupom removido: não vale para cartão.');
   const brutoCent=brutoBalCent(), bruto=reaisDe(brutoCent);
   // Exclusividade: com cupom, o desconto manual é zero — e vice-versa.
-  const desc = balCupom ? 0 : descontoBal();
-  const cupomCod = balCupom ? balCupom.codigo : null;
-  const cupDescCent = balCupom ? descontoCupomBalCent() : 0;
-  const totalCent = Math.max(0, brutoCent - Math.min(balCupom?cupDescCent:centDe(desc), brutoCent));
+  // Brinde zera os dois: não há o que descontar de graça.
+  const desc = brinde ? 0 : (balCupom ? 0 : descontoBal());
+  const cupomCod = brinde ? null : (balCupom ? balCupom.codigo : null);
+  const cupDescCent = (!brinde && balCupom) ? descontoCupomBalCent() : 0;
+  const totalCent = brinde ? 0
+    : Math.max(0, brutoCent - Math.min(balCupom?cupDescCent:centDe(desc), brutoCent));
   const total = reaisDe(totalCent);
-  const motivo = balCupom ? '' : (el('balMotivo').value||'').trim();
+  const motivo = brinde ? (el('balMotivo').value||'').trim() : (balCupom ? '' : (el('balMotivo').value||'').trim());
+  if(brinde && !confirm("INSCRIÇÃO COMO BRINDE\n\n"+nome+"\nCamiseta: "+balTam+
+      "\n\nValor: R$ 0,00 (gratuita — não entra como receita)\nValor cheio de referência: "+BRL(bruto)+
+      (motivo?"\nMotivo: "+motivo:"")+"\n\nO estoque "+balTam+" será reduzido em 1.\n\nConfirmar?")) return;
   if(desc>0 && !confirm("DESCONTO DE "+BRL(desc)+"\n\nValor cheio: "+BRL(bruto)+"\nValor a cobrar: "+BRL(total)+(motivo?"\nMotivo: "+motivo:"")+"\n\nConfirmar?")) return;
   if(cupomCod && !confirm("CUPOM "+cupomCod+" — "+balCupom.percentual+"%\n\nValor cheio: "+BRL(bruto)+"\nValor a cobrar: "+BRL(total)+"\n\nConfirmar?")) return;
   const d=CONFIG.distancias[0], proto=protocolo(), agora=Date.now();
@@ -3926,12 +4355,17 @@ async function salvarBalcao(){
     nome, docTipo:tipo, documento:doc, cpf:(tipo==='CPF'?doc:''),
     nascimento:el('balNasc').value, genero:el('balGenero').value,
     celular:cel, email:el('balEmail').value.trim(), cidade:el('balCidade').value.trim(),
-    pagamento:balPagEscolhido(), valor:total, valorCheio:bruto, desconto:desc, motivoDesconto:motivo,
+    pagamento:forma, valor:total, valorCheio:bruto, desconto:desc, motivoDesconto:motivo,
     evento:CONFIG.evento.nome,
     origem:'balcao', aceitaWpp: el('balOptin').checked, criadoEm:agora,
     confirmadoEm: pago?agora:null,
-    kitRetirado: entregarAgora, kitRetiradoEm: entregarAgora?agora:null };
-  // Tamanho cujo estoque baixa junto com a criação (só em venda já paga).
+    kitRetirado: entregarAgora, kitRetiradoEm: entregarAgora?agora:null,
+    // No balcão a pessoa está na frente do operador: a retirada é sempre
+    // dela mesma. Sem pergunta extra — a venda presencial tem que ser rápida.
+    retiradoPorTipo: entregarAgora ? 'proprio' : null,
+    retiradoPorNome: null, retiradoPorCpf: null };
+  if(brinde) insc.brinde=true;   // marcador único; ausente = inscrição normal
+  // Tamanho cujo estoque baixa junto com a criação (venda paga ou brinde).
   const baixarTam = (pago && CONFIG.camisetas.some(c=>c.tam===balTam)) ? balTam : null;
   insc.estoqueBaixado = !!baixarTam;   // marcador: nasce coerente com o que foi feito
 
@@ -4080,7 +4514,16 @@ async function calcularAuditoria(){
   const cupConf=cupons.reduce((s,c)=>s+c.conf,0);
   const cupConversao=cupTotalInscr?(cupConf/cupTotalInscr*100):null;
   const parado=pend.reduce((s,i)=>s+(i.valor||0),0);
-  const ticket=conf.length?receita/conf.length:0;
+  /* Ticket médio = quanto rende, em média, uma inscrição VENDIDA.
+     Brinde é inscrição confirmada de verdade e continua contado em
+     `conf`, na receita, no estoque e em todo o resto — mas dividir a
+     receita por ele puxaria a média para baixo sem que nada tenha sido
+     vendido mais barato. Fora do divisor, e fora do numerador junto
+     (a receita dele já é zero, então `receita` não muda). */
+  const confPagas=conf.filter(i=>i.brinde!==true);
+  const receitaPagas=confPagas.reduce((s,i)=>s+(i.valor||0),0);
+  const brindes=conf.filter(i=>i.brinde===true).length;
+  const ticket=confPagas.length?receitaPagas/confPagas.length:0;
 
   const temposPg=conf.filter(i=>i.confirmadoEm&&i.criadoEm).map(i=>(i.confirmadoEm-i.criadoEm)/3600000);
   const mediaPgH=temposPg.length?temposPg.reduce((a,b)=>a+b,0)/temposPg.length:null;
@@ -4165,10 +4608,14 @@ async function calcularAuditoria(){
   if(!R.length) R.push('Ainda não há dados suficientes para recomendações. Volte depois das primeiras inscrições.');
 
   return { agora, ins, ativas, conf, pend, canc, funil, receita, parado, ticket, mediaPgH, pendAntigos, semKit,
-           semKitAntigos, retirados:conf.filter(i=>i.kitRetirado), diasAtivos, ultimos7, ritmo7, restantes,
+           semKitAntigos, retirados:conf.filter(i=>i.kitRetirado),
+           // Quantos kits saíram na mão de outra pessoa. Calculado sobre a
+           // mesma lista já em memória — nenhuma leitura nova do Firestore.
+           retiradosTerceiro:conf.filter(i=>i.kitRetirado && i.retiradoPorTipo==='terceiro').length,
+           diasAtivos, ultimos7, ritmo7, restantes,
            diasEsgotar, dEvento, projecao, tamanhos, porPag, porCidade, porGenero, faixas, idadeMedia,
            optin, duplicados, telRuins, problemas:P, recomendacoes:R, porDia, porSemana, porHora, porOrigem, descTotal, comDesc,
-           cupons, cupTotalInscr, cupTotalDesc, cupConf, cupConversao };
+           cupons, cupTotalInscr, cupTotalDesc, cupConf, cupConversao, brindes, confPagas };
 }
 
 function textoEsgotar(a){
@@ -4228,6 +4675,7 @@ async function renderAuditoria(){
 
     <div class="cfg-sec"><h3>Kit</h3>
       <div class="aud-linha"><span>Entregues</span><b>${a.retirados.length}</b>${barra(a.retirados.length,Math.max(a.conf.length,1))}</div>
+      ${a.retiradosTerceiro>0?`<div class="aud-linha"><span>· retirados por terceiros</span><b>${a.retiradosTerceiro}</b>${barra(a.retiradosTerceiro,Math.max(a.retirados.length,1))}</div>`:''}
       <div class="aud-linha"><span>Falta retirar</span><b>${a.semKit.length}</b></div>
       <div class="aud-linha"><span>Pagos há +7 dias sem retirar</span><b>${a.semKitAntigos.length}</b></div>
     </div>
@@ -4240,6 +4688,15 @@ async function renderAuditoria(){
       <div class="aud-sep"></div>
       ${Object.entries(a.faixas).map(([k,v])=>`<div class="aud-linha"><span>${k} anos</span><b>${v}</b>${barra(v,Math.max(a.ativas.length,1))}</div>`).join('')}
       <p class="aud-nota">Idade média: ${a.idadeMedia||'—'} anos</p>
+    </div>
+
+    <div class="cfg-sec"><h3>Benefícios concedidos</h3>
+      <p class="aud-nota">Quem entrou pagando menos — ou sem pagar. Filtra a lista abaixo.</p>
+      <div id="admFiltrosBen" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px">
+        ${[['todos','Todos'],['desconto','Com desconto'],['cupom','Com cupom'],['ambos','Desconto ou cupom'],['brinde','Brinde']]
+          .map(([k,r])=>`<button class="fbtn ${benFiltro===k?'on':''}" data-b="${k}" onclick="filtrarBeneficio('${k}',this)">${r}</button>`).join('')}
+      </div>
+      <div id="admBenLista"></div>
     </div>
 
     <div class="cfg-sec aud-prob"><h3>Problemas encontrados</h3>
@@ -4288,6 +4745,66 @@ async function renderAuditoria(){
          se você clicar aqui por engano, dá para restaurar pelo bloco de Backup acima.</p>
       <button class="btn-perigo" onclick="zerarTudo()">Apagar tudo e recomeçar</button>
     </div>`;
+
+  renderBeneficios();
+}
+
+/* ═══════════ BENEFÍCIOS — quem pagou menos, e por quê ═══════════
+   Lê SÓ o admCache que já está em memória: nenhuma consulta nova ao
+   Firestore, nem ao trocar de filtro. Os campos são os que já existem —
+   `desconto`/`motivoDesconto` (desconto manual do balcão), `cupom`/
+   `cupomPercentual`/`cupomDesconto` (cupom), `brinde` (gratuita) e
+   `valorCheio` (quanto teria custado). Nada duplicado. */
+let benFiltro='todos';
+const temDesconto = i => Number(i.desconto||0) > 0;
+const temCupom    = i => !!i.cupom;
+const ehBrinde    = i => i.brinde === true;
+function filtrarBeneficio(k, btn){
+  benFiltro=k;
+  const box=el('admFiltrosBen');
+  if(box) box.querySelectorAll('.fbtn').forEach(b=>b.classList.toggle('on', b===btn));
+  renderBeneficios();
+}
+function renderBeneficios(){
+  const alvo=el('admBenLista'); if(!alvo) return;
+  const base=admCache.filter(i=>i.status!=='cancelado');
+  const f = benFiltro==='desconto' ? base.filter(temDesconto)
+          : benFiltro==='cupom'    ? base.filter(temCupom)
+          : benFiltro==='ambos'    ? base.filter(i=>temDesconto(i)||temCupom(i))
+          : benFiltro==='brinde'   ? base.filter(ehBrinde)
+          : base.filter(i=>temDesconto(i)||temCupom(i)||ehBrinde(i));   // "Todos" = todos os beneficiados
+
+  if(!f.length){ alvo.innerHTML='<p class="aud-vazio">Nenhuma inscrição neste filtro.</p>'; return; }
+  f.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+
+  const totalCheio=f.reduce((s,i)=>s+Number(i.valorCheio!=null?i.valorCheio:i.valor||0),0);
+  const totalPago =f.reduce((s,i)=>s+Number(i.valor||0),0);
+  const abatido=Math.max(0,totalCheio-totalPago);
+
+  alvo.innerHTML=`
+    <div class="stat-row" style="margin-bottom:12px">
+      <div class="stat destaque"><b>${f.length}</b><small>Inscrições</small></div>
+      <div class="stat"><b>${BRL(abatido)}</b><small>Abatido</small></div>
+      <div class="stat"><b>${BRL(totalPago)}</b><small>Efetivamente pago</small></div>
+    </div>`
+    + f.map(i=>{
+      const cheio=Number(i.valorCheio!=null?i.valorCheio:i.valor||0);
+      const selos=[
+        ehBrinde(i)    ? '<span class="badge b-ok">BRINDE</span>' : '',
+        temCupom(i)    ? `<span class="badge b-pend">cupom ${esc(i.cupom)}${i.cupomPercentual?' · '+i.cupomPercentual+'%':''}</span>` : '',
+        temDesconto(i) ? `<span class="badge b-pend">desconto ${BRL(i.desconto)}</span>` : ''
+      ].filter(Boolean).join(' ');
+      const st=(stMap[i.status]||['—','b-pend'])[0];
+      return `<div class="aud-linha" style="align-items:flex-start;flex-wrap:wrap;gap:6px">
+        <span style="flex:1;min-width:190px">
+          <b style="color:var(--amarelo)">${esc(i.protocolo)||'—'}</b> · ${esc(i.nome)}<br>
+          <small style="color:var(--muted)">${dataBR(i.criadoEm)} · ${esc(st)} · camiseta ${esc(i.camiseta)||'—'}</small>
+          ${i.motivoDesconto?`<br><small style="color:var(--muted)">motivo: ${esc(i.motivoDesconto)}</small>`:''}
+          <div style="margin-top:5px">${selos}</div>
+        </span>
+        <b style="white-space:nowrap">${BRL(i.valor||0)}${cheio>Number(i.valor||0)?`<br><small style="color:var(--muted);text-decoration:line-through;font-weight:400">${BRL(cheio)}</small>`:''}</b>
+      </div>`;
+    }).join('');
 }
 
 /* ═══════════════ BACKUP E RESTAURAÇÃO ═══════════════
@@ -4346,14 +4863,19 @@ async function baixarPlanilha(){
     const lista=await DB.list();
     const cab=['Protocolo','Inscrito em','Nome','Tipo doc','Documento','Nascimento','Gênero',
                'Celular','E-mail','Cidade','Camiseta','Distância','Forma de pagamento','Valor',
-               'Status','Confirmado em','Kit retirado','Retirado em','Origem','Aceita WhatsApp',
+               'Status','Confirmado em','Kit retirado','Retirado em','Retirado por','CPF de quem retirou','Origem','Aceita WhatsApp',
                'Desconto','Motivo do desconto','Valor cheio','Cupom','Desconto do cupom'];
     const linhas=lista.map(i=>[
       i.protocolo, dataBR(i.criadoEm), i.nome, i.docTipo, docDe(i), i.nascimento, i.genero,
       i.celular, i.email, i.cidade, i.camiseta, i.distancia, i.pagamento,
       (Number(i.valor)||0).toFixed(2).replace('.',','),
       i.status, i.confirmadoEm?dataBR(i.confirmadoEm):'', i.kitRetirado?'sim':'não',
-      i.kitRetiradoEm?dataBR(i.kitRetiradoEm):'', i.origem==='balcao'?'balcão':'site',
+      i.kitRetiradoEm?dataBR(i.kitRetiradoEm):'',
+      // Relatório administrativo: quem levou o kit e o CPF, quando foi terceiro.
+      (!i.kitRetirado ? '' : (i.retiradoPorTipo==='terceiro' ? (i.retiradoPorNome||'terceiro')
+                            : (i.retiradoPorTipo==='proprio' ? 'própria pessoa' : ''))),
+      (i.retiradoPorTipo==='terceiro' ? (i.retiradoPorCpf||'') : ''),
+      i.origem==='balcao'?'balcão':'site',
       i.aceitaWpp===false?'não':'sim',
       i.desconto?(Number(i.desconto)||0).toFixed(2).replace('.',','):'', i.motivoDesconto||'',
       i.valorCheio?(Number(i.valorCheio)||0).toFixed(2).replace('.',','):'',
