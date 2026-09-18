@@ -198,7 +198,9 @@ footer .fmeta{margin-top:10px}
 /* ---- seleção por quantidade (maxCamisasPorDoc > 1) ----
    Botões de 40px: alvo de toque confortável no celular sem zoom. */
 .size.qtd{cursor:default;padding:12px 6px 10px}
-.size.qtd small{font-size:11px;color:var(--muted)}
+/* Sem `color` aqui de propósito: assim o texto herda o verde de `.size small`
+   e o vermelho de `.size.off small`, igual aos cartões de tamanho único. */
+.size.qtd small{font-size:11px}
 .qtd-ctrl{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:9px}
 .qtd-btn{width:40px;height:40px;flex:0 0 40px;border-radius:12px;border:1.5px solid var(--line);
   background:rgba(255,255,255,.07);color:#fff;font-size:22px;font-weight:800;line-height:1;
