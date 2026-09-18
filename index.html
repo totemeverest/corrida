@@ -195,6 +195,29 @@ footer .fmeta{margin-top:10px}
 .size.off{opacity:.45;cursor:not-allowed;border-style:dashed}
 .size.off small{color:var(--err)}
 
+/* ---- seleção por quantidade (maxCamisasPorDoc > 1) ----
+   Botões de 40px: alvo de toque confortável no celular sem zoom. */
+.size.qtd{cursor:default;padding:12px 6px 10px}
+.size.qtd small{font-size:11px;color:var(--muted)}
+.qtd-ctrl{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:9px}
+.qtd-btn{width:40px;height:40px;flex:0 0 40px;border-radius:12px;border:1.5px solid var(--line);
+  background:rgba(255,255,255,.07);color:#fff;font-size:22px;font-weight:800;line-height:1;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.qtd-btn:hover:not(:disabled){border-color:var(--amarelo);color:var(--amarelo)}
+.qtd-btn:active:not(:disabled){transform:scale(.92)}
+.qtd-btn:disabled{opacity:.3;cursor:not-allowed}
+.qtd-num{font-family:'Anton';font-style:italic;font-size:24px;min-width:30px;text-align:center;color:#fff}
+.size.qtd.sel .qtd-num{color:var(--amarelo)}
+.cam-total{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;
+  padding:12px 16px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.05);
+  font-size:13.5px;font-weight:700;color:var(--muted)}
+.cam-total b{font-family:'Anton';font-style:italic;font-size:21px;color:#fff}
+.cam-total.cheio{border-color:var(--amarelo);background:rgba(255,201,60,.12)}
+.cam-total.cheio b{color:var(--amarelo)}
+.cam-nota{color:var(--muted);font-size:12px;margin:7px 0 0;line-height:1.5}
+@media(max-width:380px){ .qtd-btn{width:36px;height:36px;flex:0 0 36px;font-size:20px} .qtd-num{font-size:21px} }
+
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .field{display:flex;flex-direction:column;gap:6px}
 .field.full{grid-column:1/-1}
@@ -1017,6 +1040,7 @@ footer .fmeta{margin-top:10px}
       <div style="margin-top:22px">
         <div class="step-title" style="font-size:15px">Tamanho da camiseta <span class="req" style="color:var(--amarelo)">*</span></div>
         <div class="size-grid" id="sizeGrid"></div>
+        <div id="camTotais" style="display:none"></div>
         <span class="hint" style="color:var(--muted);font-size:12px;display:block;margin-top:8px">Modelagem única. Só aparecem os tamanhos disponíveis em estoque.</span>
       </div>
       <div class="nav-btns"><span></span><button class="btn btn-cta grow" onclick="passo(2)"><span>Continuar</span></button></div>
@@ -1510,16 +1534,27 @@ const DB = {
   async moverStatus(id, novoStatus){
     const decidir = (ins) => {
       const antes = ins.status;
+      /* A COMPOSIÇÃO substitui o tamanho único. Inscrição antiga sem
+         `camisas` vira { camiseta: 1 } — mesma quantidade de sempre. */
+      const pedido = normalizarPedido(camisasDe(ins));
       const tam = ins.camiseta;
-      const valido = !!(tam && CONFIG.camisetas.some(c=>c.tam===tam));
+      // Só tamanhos que existem em CONFIG.camisetas entram na conta.
+      // Sem essa guarda, tamanho inválido devolvia +1 num campo fantasma
+      // e o marcador não era atualizado — devolvendo de novo a cada clique (BUG 3).
+      const validos = CONFIG.camisetas.map(c=>c.tam);
+      const pedidoValido = {};
+      for(const k of Object.keys(pedido)) if(validos.indexOf(k)>-1) pedidoValido[k]=pedido[k];
+      const valido = temPedido(pedidoValido);
       const baixado = (typeof ins.estoqueBaixado==='boolean') ? ins.estoqueBaixado : (antes==='confirmado');
       const deve = valido && novoStatus==='confirmado';
-      // Tamanho que não existe em CONFIG.camisetas NÃO mexe em estoque, ponto.
-      // Sem essa guarda, uma inscrição com tamanho inválido devolvia +1 num campo
-      // fantasma e o marcador não era atualizado — devolvendo de novo a cada clique.
-      const delta = !valido ? 0
+      // `sinalEstoque` substitui o antigo `delta` ±1: -1 baixa a composição
+      // inteira, +1 devolve a composição inteira, 0 não mexe.
+      const sinalEstoque = !valido ? 0
                   : (deve && !baixado) ? -1
                   : (!deve && baixado) ?  1 : 0;
+      // `delta` continua no retorno, com o MESMO significado de antes para
+      // uma camisa (-1/0/+1). A tela usa só para saber SE mexeu no estoque.
+      const delta = sinalEstoque;
       const p = { status:novoStatus };
       if(novoStatus==='confirmado' && antes!=='confirmado') p.confirmadoEm=Date.now();
       if(valido) p.estoqueBaixado = deve;
@@ -1538,10 +1573,16 @@ const DB = {
       const temCupom = !!ins.cupom;
       const consumido = (typeof ins.cupomConsumido==='boolean') ? ins.cupomConsumido : false;
       const deveCupom = temCupom && novoStatus!=='cancelado';
+      /* QUANTIDADE DE USOS = número de camisas da inscrição. Vem de
+         totalCamisasDe(ins), lido do DOCUMENTO dentro da transação —
+         nunca de valor enviado pela tela. Inscrição antiga sem `camisas`
+         devolve 1, que é exatamente o comportamento anterior. */
+      const qtdCupom = Math.max(1, totalCamisasDe(ins));
       const deltaCupom = (deveCupom && !consumido) ? 1 : (!deveCupom && consumido) ? -1 : 0;
       if(temCupom) p.cupomConsumido = deveCupom;
 
-      return { antes, tam, delta, patch:p, cupom:(ins.cupom||null), deltaCupom, forma:(ins.pagamento||'PIX') };
+      return { antes, tam, delta, sinalEstoque, pedido:pedidoValido, patch:p,
+               cupom:(ins.cupom||null), deltaCupom, qtdCupom, forma:(ins.pagamento||'PIX') };
     };
     if(fdb){
       const refI=fdb.collection("inscricoes").doc(id);
@@ -1554,17 +1595,27 @@ const DB = {
         let refC=null, cup=null;
         if(r.deltaCupom){ refC=fdb.collection("cupons").doc(r.cupom);
                           const dC=await t.get(refC); cup=dC.exists?dC.data():null; }
+        // Estoque: lê o settings e valida a composição INTEIRA. Ao confirmar,
+        // faltando um tamanho, lança aqui — nem o status nem o cupom são
+        // gravados. Nunca baixa parcial.
+        let patchEst=null;
+        if(r.sinalEstoque){
+          const dS=await t.get(refS);
+          patchEst=baixaDeEstoque((dS.exists && dS.data().camiseta)||{}, r.pedido, r.sinalEstoque);
+        }
         /* --- daqui para baixo, só gravações --- */
         if(r.deltaCupom>0){
           // loteIdx null: reabertura não é venda nova, não checa lote.
-          const av=avaliarCupom(cup, r.cupom, 0, r.forma, null);   // revalida limite, ativo e validade
+          // A quantidade entra na validação: reabrir 5 camisas exige 5 usos
+          // livres. Sem isso a reabertura estouraria o limite do cupom.
+          const av=avaliarCupom(cup, r.cupom, 0, r.forma, null, r.qtdCupom);
           if(!av.valido){ const e=new Error("Cupom "+r.cupom+": "+av.motivo); e.cupomInvalido=true; throw e; }
-          t.update(refC, { usados: Number(cup.usados||0)+1 });
+          t.update(refC, { usados: Number(cup.usados||0)+r.qtdCupom });
         } else if(r.deltaCupom<0 && cup){
-          t.update(refC, { usados: Math.max(0, Number(cup.usados||0)-1) });   // nunca negativo
+          t.update(refC, { usados: Math.max(0, Number(cup.usados||0)-r.qtdCupom) });   // nunca negativo
         }
         t.update(refI, r.patch);
-        if(r.delta) t.update(refS, {["camiseta."+r.tam]: firebase.firestore.FieldValue.increment(r.delta)});
+        if(patchEst) t.update(refS, patchEst);
         return r;
       });
     }
@@ -1574,18 +1625,19 @@ const DB = {
     if(r.deltaCupom){
       const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}"); const cup=mapa[r.cupom]||null;
       if(r.deltaCupom>0){
-        const av=avaliarCupom(cup, r.cupom, 0, r.forma, null);
+        const av=avaliarCupom(cup, r.cupom, 0, r.forma, null, r.qtdCupom);
         if(!av.valido){ const e=new Error("Cupom "+r.cupom+": "+av.motivo); e.cupomInvalido=true; throw e; }
-        cup.usados=Number(cup.usados||0)+1;
-      } else if(cup){ cup.usados=Math.max(0, Number(cup.usados||0)-1); }
+        cup.usados=Number(cup.usados||0)+r.qtdCupom;
+      } else if(cup){ cup.usados=Math.max(0, Number(cup.usados||0)-r.qtdCupom); }
       localStorage.setItem(LS_CUP, JSON.stringify(mapa));
     }
-    Object.assign(ins,r.patch); localStorage.setItem(LS_INSC,JSON.stringify(a));
-    if(r.delta){
-      const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{};
-      s.camiseta=s.camiseta||{}; s.camiseta[r.tam]=Number(s.camiseta[r.tam]||0)+r.delta;
+    if(r.sinalEstoque){
+      const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{}; s.camiseta=s.camiseta||{};
+      const p=baixaDeEstoque(s.camiseta, r.pedido, r.sinalEstoque);   // valida antes
+      for(const k of Object.keys(p)) s.camiseta[k.split('.')[1]]=p[k];
       localStorage.setItem(LS_SET,JSON.stringify(s));
     }
+    Object.assign(ins,r.patch); localStorage.setItem(LS_INSC,JSON.stringify(a));
     return r;
   },
 
@@ -1922,11 +1974,15 @@ const DB = {
      increment() sozinho NÃO resolveria: ele soma de forma atômica, mas não
      sabe recusar — os dois passariam e o contador estouraria o limite.
      --------------------------------------------------------------------- */
-  async criarComCupom(insc, baixarTam, codigo, forma, brutoCent){
+  async criarComCupom(insc, baixar, codigo, forma, brutoCent){
     const cod=normCupom(codigo);
+    const pedido=normalizarPedido(baixar);
     const lote=loteAtualIdx();
+    /* Quantas camisas esta inscrição leva — sai do próprio documento que
+       está sendo criado, não da tela. Inscrição de 1 camisa devolve 1. */
+    const qtd=Math.max(1, totalCamisasDe(insc));
     const montar=(cup)=>{
-      const av=avaliarCupom(cup, cod, brutoCent, forma, lote);
+      const av=avaliarCupom(cup, cod, brutoCent, forma, lote, qtd);
       if(!av.valido){ const e=new Error(av.motivo); e.cupomInvalido=true; throw e; }
       // valorCheio sai do próprio brutoCent — não depende de o chamador lembrar.
       // Sem isso, remover o cupom depois restauraria o valor JÁ COM desconto.
@@ -1939,27 +1995,35 @@ const DB = {
       const refI=fdb.collection("inscricoes").doc();
       const refS=fdb.collection("config").doc("settings");
       const r=await fdb.runTransaction(async t=>{
+        /* TODAS as leituras primeiro — exigência do Firestore. */
         const dC=await t.get(refC);
+        const dS=temPedido(pedido) ? await t.get(refS) : null;
         const cup=dC.exists?dC.data():null;
-        const m=montar(cup);
+        const m=montar(cup);                                  // valida o cupom
+        // Valida o estoque de TODOS os tamanhos antes de gravar qualquer
+        // coisa: faltando um, lança aqui e nem a inscrição nem o contador
+        // do cupom chegam a ser escritos.
+        const patchEst = dS ? baixaDeEstoque((dS.exists && dS.data().camiseta)||{}, pedido, -1) : null;
+        /* --- daqui para baixo, só gravações --- */
         t.set(refI, m.doc);
-        t.update(refC, { usados: Number(cup.usados||0)+1 });   // valor explícito: o limite fica provado
-        if(baixarTam) t.update(refS, {["camiseta."+baixarTam]: firebase.firestore.FieldValue.increment(-1)});
+        t.update(refC, { usados: Number(cup.usados||0)+qtd });   // valor explícito: o limite fica provado
+        if(patchEst) t.update(refS, patchEst);
         return m;
       });
       return { id:refI.id, doc:r.doc, cupom:r.av };
     }
     const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
     const m=montar(mapa[cod]||null);
-    mapa[cod].usados=Number(mapa[cod].usados||0)+1;
+    mapa[cod].usados=Number(mapa[cod].usados||0)+qtd;
     localStorage.setItem(LS_CUP, JSON.stringify(mapa));
-    const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
-    m.doc._id="L"+Date.now(); a.push(m.doc); localStorage.setItem(LS_INSC,JSON.stringify(a));
-    if(baixarTam){
-      const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{};
-      s.camiseta=s.camiseta||{}; s.camiseta[baixarTam]=Number(s.camiseta[baixarTam]||0)-1;
+    if(temPedido(pedido)){
+      const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{}; s.camiseta=s.camiseta||{};
+      const p=baixaDeEstoque(s.camiseta, pedido, -1);   // valida antes de gravar
+      for(const k of Object.keys(p)) s.camiseta[k.split('.')[1]]=p[k];
       localStorage.setItem(LS_SET,JSON.stringify(s));
     }
+    const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
+    m.doc._id="L"+Date.now(); a.push(m.doc); localStorage.setItem(LS_INSC,JSON.stringify(a));
     return { id:m.doc._id, doc:m.doc, cupom:m.av };
   },
 
@@ -1985,10 +2049,20 @@ const DB = {
       if(ins.status!=='pendente')   throw erroCupom('Só dá para mexer no cupom enquanto a inscrição está aguardando pagamento.');
       if(ins.pagamento==='Cartão')  throw erroCupom('Cupom não pode ser aplicado a pagamento por cartão.');
       if(Number(ins.desconto||0)>0) throw erroCupom('Esta inscrição tem desconto manual. Cupom e desconto manual não se somam — corrija o desconto primeiro.');
+      /* CORTESIA NÃO CONSOME CUPOM. O balcão já zera o cupom ao marcar
+         cortesia, mas uma cortesia nasce CONFIRMADA e pode ser REABERTA —
+         virando pendente e caindo aqui. Sem esta guarda, daria para aplicar
+         cupom numa inscrição de R$ 0,00: desconto sobre nada, queimando usos
+         de um cupom que não beneficia ninguém.
+         `ehCortesia` cobre o formato novo E o legado (`brinde:true`). */
+      if(ehCortesia(ins)) throw erroCupom('Esta inscrição é uma cortesia. Cortesia não recebe cupom.');
       if(ins.cupom===cod && ins.cupomConsumido===true) throw erroCupom('Este cupom já está aplicado nesta inscrição.');
       // O valor cheio vem da PRÓPRIA inscrição. O lote de hoje não mexe em inscrição antiga.
       const brutoCent = centDe(ins.valorCheio!=null ? ins.valorCheio : ins.valor);
-      return { brutoCent, forma:(ins.pagamento||'PIX'),
+      /* A quantidade vale para os DOIS lados da troca: devolve N ao antigo
+         e consome N do novo. Sai do documento lido na transação. */
+      const qtd = Math.max(1, totalCamisasDe(ins));
+      return { brutoCent, qtd, forma:(ins.pagamento||'PIX'),
                antigo:(ins.cupomConsumido===true && ins.cupom) ? ins.cupom : null };
     };
     const montarPatch = (av, brutoCent) => ({
@@ -2009,10 +2083,13 @@ const DB = {
           const dA=await t.get(refAnt); antDoc=dA.exists?dA.data():null;
         }
         /* --- fim das leituras; daqui para baixo só gravações --- */
-        const av=avaliarCupom(dNovo.exists?dNovo.data():null, cod, prep.brutoCent, prep.forma, loteAtualIdx());
+        /* Valida o cupom NOVO com a quantidade inteira ANTES de qualquer
+           gravação. Se B não comporta N camisas, lança aqui: nem A é
+           devolvido, nem B consumido, nem a inscrição alterada. */
+        const av=avaliarCupom(dNovo.exists?dNovo.data():null, cod, prep.brutoCent, prep.forma, loteAtualIdx(), prep.qtd);
         if(!av.valido) throw erroCupom(av.motivo);
-        if(refAnt && antDoc) t.update(refAnt, { usados: Math.max(0, Number(antDoc.usados||0)-1) });
-        t.update(refNovo, { usados: Number(dNovo.data().usados||0)+1 });
+        if(refAnt && antDoc) t.update(refAnt, { usados: Math.max(0, Number(antDoc.usados||0)-prep.qtd) });
+        t.update(refNovo, { usados: Number(dNovo.data().usados||0)+prep.qtd });
         const patch=montarPatch(av, prep.brutoCent);
         t.update(refI, patch);
         return { patch, av, trocouDe:prep.antigo };
@@ -2022,11 +2099,11 @@ const DB = {
     const ins=arr.find(x=>x._id===id);
     const prep=preparar(ins);
     const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
-    const av=avaliarCupom(mapa[cod]||null, cod, prep.brutoCent, prep.forma, loteAtualIdx());
+    const av=avaliarCupom(mapa[cod]||null, cod, prep.brutoCent, prep.forma, loteAtualIdx(), prep.qtd);
     if(!av.valido) throw erroCupom(av.motivo);
     if(prep.antigo && prep.antigo!==cod && mapa[prep.antigo])
-      mapa[prep.antigo].usados=Math.max(0,Number(mapa[prep.antigo].usados||0)-1);
-    mapa[cod].usados=Number(mapa[cod].usados||0)+1;
+      mapa[prep.antigo].usados=Math.max(0,Number(mapa[prep.antigo].usados||0)-prep.qtd);
+    mapa[cod].usados=Number(mapa[cod].usados||0)+prep.qtd;
     localStorage.setItem(LS_CUP,JSON.stringify(mapa));
     const patch=montarPatch(av, prep.brutoCent);
     Object.assign(ins,patch); localStorage.setItem(LS_INSC,JSON.stringify(arr));
@@ -2040,7 +2117,10 @@ const DB = {
       if(ins.status==='confirmado') throw erroCupom('Esta inscrição já foi confirmada. O cupom não pode ser alterado.');
       if(ins.status!=='pendente')   throw erroCupom('Só dá para mexer no cupom enquanto a inscrição está aguardando pagamento.');
       if(!ins.cupom) throw erroCupom('Esta inscrição não tem cupom.');
+      // Devolve ao cupom exatamente o que esta inscrição consumiu:
+      // uma camisa por unidade. Antiga sem `camisas` devolve 1.
       return { codigo:ins.cupom, devolver:(ins.cupomConsumido===true),
+               qtd: Math.max(1, totalCamisasDe(ins)),
                cheio:(ins.valorCheio!=null ? Number(ins.valorCheio) : Number(ins.valor||0)) };
     };
     const patchDe = (cheio) => ({ cupom:null, cupomPercentual:null, cupomDesconto:0,
@@ -2054,7 +2134,7 @@ const DB = {
         if(prep.devolver){ refC=fdb.collection("cupons").doc(prep.codigo);
                            const dC=await t.get(refC); cupDoc=dC.exists?dC.data():null; }
         /* --- fim das leituras --- */
-        if(prep.devolver && cupDoc) t.update(refC, { usados: Math.max(0, Number(cupDoc.usados||0)-1) });
+        if(prep.devolver && cupDoc) t.update(refC, { usados: Math.max(0, Number(cupDoc.usados||0)-prep.qtd) });
         const patch=patchDe(prep.cheio);
         t.update(refI, patch);
         return { patch, codigo:prep.codigo };
@@ -2065,7 +2145,7 @@ const DB = {
     const prep=preparar(ins);
     if(prep.devolver){
       const mapa=JSON.parse(localStorage.getItem(LS_CUP)||"{}");
-      if(mapa[prep.codigo]) mapa[prep.codigo].usados=Math.max(0,Number(mapa[prep.codigo].usados||0)-1);
+      if(mapa[prep.codigo]) mapa[prep.codigo].usados=Math.max(0,Number(mapa[prep.codigo].usados||0)-prep.qtd);
       localStorage.setItem(LS_CUP,JSON.stringify(mapa));
     }
     const patch=patchDe(prep.cheio);
@@ -2076,26 +2156,93 @@ const DB = {
   /* Cria a inscrição e baixa o estoque de uma vez só (venda no balcão já paga).
      Lote atômico: ou nascem os dois, ou não nasce nenhum — acaba a janela em
      que a inscrição existia mas o estoque não tinha baixado. */
-  async criarComEstoque(insc, baixarTam){
+  async criarComEstoque(insc, baixar){
+    const pedido = normalizarPedido(baixar);
     if(fdb){
       const refI=fdb.collection("inscricoes").doc();   // gera o ID sem gravar
-      const lote=fdb.batch();
-      lote.set(refI, insc);
-      if(baixarTam) lote.update(fdb.collection("config").doc("settings"),
-                                {["camiseta."+baixarTam]: firebase.firestore.FieldValue.increment(-1)});
-      await lote.commit();
+      const refS=fdb.collection("config").doc("settings");
+      /* ERA UM BATCH COM increment(-1). Batch é atômico, mas `increment`
+         NÃO SABE RECUSAR — com 1 camisa a checagem de tela segurava; com
+         N unidades em vários tamanhos, gravaria negativo sem reclamar.
+         Virou transação: lê o estoque, prova que dá para todos os
+         tamanhos, e só então grava. É o padrão 3 da SEGURANCA.md. */
+      await fdb.runTransaction(async t=>{
+        let patch=null;
+        if(temPedido(pedido)){
+          const dS=await t.get(refS);
+          patch = baixaDeEstoque((dS.exists && dS.data().camiseta) || {}, pedido, -1);
+        }
+        t.set(refI, insc);
+        if(patch) t.update(refS, patch);
+      });
       return refI.id;
+    }
+    const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{}; s.camiseta=s.camiseta||{};
+    if(temPedido(pedido)){
+      const p=baixaDeEstoque(s.camiseta, pedido, -1);
+      for(const k of Object.keys(p)) s.camiseta[k.split('.')[1]]=p[k];
+      localStorage.setItem(LS_SET,JSON.stringify(s));
     }
     const a=JSON.parse(localStorage.getItem(LS_INSC)||"[]");
     insc._id="L"+Date.now(); a.push(insc); localStorage.setItem(LS_INSC,JSON.stringify(a));
-    if(baixarTam){
-      const s=JSON.parse(localStorage.getItem(LS_SET)||"null")||{};
-      s.camiseta=s.camiseta||{}; s.camiseta[baixarTam]=Number(s.camiseta[baixarTam]||0)-1;
-      localStorage.setItem(LS_SET,JSON.stringify(s));
-    }
     return insc._id;
   }
 };
+
+/* ═══════════ ESTOQUE POR QUANTIDADE — REGRA ÚNICA ═══════════
+
+   Três funções mexem no estoque na criação e na confirmação. Antes cada
+   uma tinha seu `increment(-1)` solto. Agora todas passam por aqui, para
+   a validação ser a mesma nos três caminhos.
+
+   `pedido` é sempre um mapa { TAM: quantidade }. Aceita string ('M') por
+   compatibilidade com os chamadores antigos — vira { M: 1 }. */
+function normalizarPedido(p){
+  if(!p) return {};
+  if(typeof p === 'string'){ const t=p.trim(); return t ? { [t]: 1 } : {}; }
+  const out={};
+  for(const k of Object.keys(p)){ const n=Math.floor(Number(p[k])||0); if(n>0) out[k]=n; }
+  return out;
+}
+const temPedido = p => !!(p && Object.keys(p).length);
+
+function erroEstoque(msg, faltas){
+  const e=new Error(msg); e.estoqueInsuficiente=true; e.faltas=faltas||[]; return e;
+}
+
+/* Monta o patch de caminhos pontilhados para MOVER estoque, validando antes.
+
+   `sinal` = -1 baixa (venda/confirmação), +1 devolve (cancelamento).
+
+   NA BAIXA valida TODOS os tamanhos antes de montar qualquer coisa: se um
+   só não tiver saldo, lança e NADA é gravado. É isto que impede a baixa
+   parcial — 2 P saem e 1 M falha, deixando o banco torto.
+
+   Tamanho fora de CONFIG.camisetas é ignorado de propósito: não existe
+   contador para ele, e criar um do nada seria estoque fantasma (BUG 3).
+
+   Valores vão EXPLÍCITOS, não por increment: o documento está no conjunto
+   de leitura da transação, então o limite fica provado — mesmo padrão de
+   `usados` em criarComCupom e de `trocarCamiseta`. */
+function baixaDeEstoque(camAtual, pedido, sinal){
+  const validos = (CONFIG.camisetas||[]).map(c=>c.tam);
+  const cam = camAtual || {};
+  const patch = {};
+  const faltas = [];
+  for(const tam of Object.keys(pedido)){
+    if(validos.indexOf(tam) < 0) continue;              // sem contador: não mexe
+    const qtd = Number(pedido[tam]||0); if(qtd <= 0) continue;
+    const tem = Number(cam[tam]||0);
+    const novo = tem + (sinal * qtd);
+    if(sinal < 0 && novo < 0) faltas.push({ tam, pedido:qtd, disponivel:tem });
+    patch["camiseta."+tam] = Math.max(0, novo);          // nunca negativo
+  }
+  if(faltas.length){
+    const txt = faltas.map(f=>`${f.tam}: pedidas ${f.pedido}, disponíveis ${f.disponivel}`).join(' · ');
+    throw erroEstoque('Estoque insuficiente — '+txt+'. Nada foi alterado.', faltas);
+  }
+  return patch;
+}
 
 /* ═══════════════════════ CUPONS — REGRA ÚNICA ═══════════════════════
    Dinheiro é contado em CENTAVOS o tempo todo; só vira reais na hora de
@@ -2139,8 +2286,16 @@ const restamDoCupom = cup => Math.max(0, Number(cup&&cup.limite||0) - Number(cup
 /* `loteIdx` null/undefined = não checar lote. Usado na REABERTURA de uma
    inscrição: ela já tinha usado o cupom legitimamente, então voltar atrás não
    é uma venda nova e não deve esbarrar no lote de hoje. */
-function avaliarCupom(cup, codigo, brutoCent, forma, loteIdx){
+/* `qtd` = quantas CAMISAS vão receber o benefício. Ausente = 1, que é
+   como era antes desta etapa e continua valendo para inscrição antiga.
+
+   REGRA COMERCIAL: o `limite` do cupom conta CAMISAS, não inscrições.
+   Uma inscrição com 5 camisas consome 5 usos. Por isso a checagem é
+   `usados + qtd > limite`, e não `usados >= limite`: um cupom com 8 de 10
+   usados aceita um pedido de 2 camisas e recusa um de 3. */
+function avaliarCupom(cup, codigo, brutoCent, forma, loteIdx, qtd){
   const bc = Math.max(0, Number(brutoCent)||0);
+  const n  = Math.max(1, Math.floor(Number(qtd)||1));
   const nao = motivo => ({ valido:false, codigo, motivo, percentual:0,
                            descontoCent:0, desconto:0,
                            valorFinalCent:bc, valorFinal:reaisDe(bc) });
@@ -2162,7 +2317,12 @@ function avaliarCupom(cup, codigo, brutoCent, forma, loteIdx){
   // Não existe cupom ilimitado: limite mínimo é 1, igual à regra do Firestore.
   const limite = Number(cup.limite), usados = Number(cup.usados||0);
   if(!(limite >= 1)) return nao('Este cupom está sem limite de usos configurado.');
-  if(usados >= limite) return nao('Este cupom atingiu o limite de utilizações.');
+  const restam = Math.max(0, limite - usados);
+  if(restam <= 0) return nao('Este cupom atingiu o limite de utilizações.');
+  if(usados + n > limite)
+    return nao(n===1 ? 'Este cupom atingiu o limite de utilizações.'
+      : 'Este cupom só tem '+restam+(restam>1?' usos disponíveis':' uso disponível')+
+        ' e o pedido tem '+n+' camisas. Reduza a quantidade ou use outro cupom.');
   let dCent = Math.round(bc * pct / 100);
   if(dCent > bc) dCent = bc;          // desconto nunca maior que o bruto
   if(dCent < 0)  dCent = 0;
@@ -2175,9 +2335,12 @@ function avaliarCupom(cup, codigo, brutoCent, forma, loteIdx){
 /* Lê o cupom no banco e avalia — usada pela interface (site e balcão).
    A transação de criação repete a avaliação com o dado fresco, então o que
    a tela mostra é sugestão; quem manda é a transação. */
-async function aplicarCupom(codigo, bruto, forma){
+async function aplicarCupom(codigo, bruto, forma, qtd){
   const cod = normCupom(codigo), bc = centDe(bruto);
-  if(!cod) return avaliarCupom(null, cod, bc, forma, loteAtualIdx());
+  // `qtd` = camisas que vão receber o desconto. A tela avisa cedo quando o
+  // cupom não comporta a quantidade; a transação confirma com dado fresco.
+  const n = Math.max(1, Math.floor(Number(qtd)||1));
+  if(!cod) return avaliarCupom(null, cod, bc, forma, loteAtualIdx(), n);
   if(!cupomFormatoOk(cod)) return { valido:false, codigo:cod, percentual:0,
       motivo:'Código inválido — use letras e números.', descontoCent:0, desconto:0,
       valorFinalCent:bc, valorFinal:reaisDe(bc) };
@@ -2186,7 +2349,7 @@ async function aplicarCupom(codigo, bruto, forma){
   catch(e){ console.error(e); return { valido:false, codigo:cod, percentual:0,
       motivo:'Não consegui verificar o cupom agora. Tente de novo.', descontoCent:0, desconto:0,
       valorFinalCent:bc, valorFinal:reaisDe(bc) }; }
-  return avaliarCupom(cup, cod, bc, forma, loteAtualIdx());
+  return avaliarCupom(cup, cod, bc, forma, loteAtualIdx(), n);
 }
 
 /* ===================== SETTINGS (preços/estoque/kit) ===================== */
@@ -2284,6 +2447,95 @@ function diasDe(ts){ if(!ts) return null; return Math.floor((Date.now()-ts)/8640
 function textoDias(ts){ const d=diasDe(ts); if(d===null) return ''; if(d<=0) return 'hoje'; if(d===1) return 'há 1 dia'; return 'há '+d+' dias'; }
 const docDe = i => (i.documento||i.cpf||'');
 const docTipoDe = i => (i.docTipo||(i.cpf?'CPF':'Doc'));
+
+/* ═══════════ COMPOSIÇÃO DE CAMISAS DE UMA INSCRIÇÃO ═══════════
+
+   ATÉ 18/09/2026 valia a premissa "1 inscrição = 1 camisa": o tamanho era a
+   string `i.camiseta` e pronto. A partir daqui uma inscrição pode conter
+   várias camisas, em vários tamanhos:
+
+       camisas: { P:2, M:1, G:1 }      totalCamisas: 4
+
+   `camiseta` CONTINUA sendo gravado — é o campo que as Rules validam
+   (`textoAte('camiseta', 6)`), que o CSV exporta e que os modelos de
+   WhatsApp usam em `{tamanho}`. Guarda o tamanho de maior quantidade.
+
+   NUNCA leia `i.camiseta` direto para saber o que a pessoa comprou.
+   Use estes dois helpers — são eles que sabem lidar com inscrição antiga.
+
+   COMPATIBILIDADE: inscrição sem `camisas` (as ~250 que já existem) é
+   interpretada como UMA camisa no tamanho que ela tem. Nenhuma migração,
+   nenhuma reescrita: o campo nasce só quando a inscrição for criada nova. */
+function camisasDe(i){
+  const c = i && i.camisas;
+  if(c && typeof c === 'object' && !Array.isArray(c)){
+    const out = {};
+    for(const k of Object.keys(c)){ const n = Number(c[k]); if(n > 0) out[k] = n; }
+    if(Object.keys(out).length) return out;
+  }
+  const t = i && i.camiseta ? String(i.camiseta).trim() : '';
+  return t ? { [t]: 1 } : {};          // legado = 1 camisa
+}
+function totalCamisasDe(i){
+  const n = i && Number(i.totalCamisas);
+  if(n > 0) return n;                   // gravado: usa direto, sem somar
+  return Object.values(camisasDe(i)).reduce((s, q) => s + Number(q || 0), 0);
+}
+/* Quantas unidades DESTE tamanho a inscrição tem. Substitui as comparações
+   `x.camiseta === tam`, que contavam inscrições em vez de camisas. */
+function qtdDoTamanho(i, tam){ return Number(camisasDe(i)[tam] || 0); }
+
+/* "2 × P · 1 × M · 1 × G" — uma camisa só devolve "M", igual a antes,
+   para não poluir telas de inscrição simples. `sep` permite trocar o
+   separador em contextos de texto puro (WhatsApp, CSV). */
+function camisasTexto(i, sep){
+  const c = camisasDe(i), ks = Object.keys(c);
+  if(!ks.length) return '—';
+  if(ks.length === 1 && c[ks[0]] === 1) return ks[0];
+  const ordem = (CONFIG.camisetas || []).map(x => x.tam);
+  ks.sort((a, b) => ordem.indexOf(a) - ordem.indexOf(b));
+  return ks.map(k => c[k] + ' × ' + k).join(sep || ' · ');
+}
+
+/* ═══════════ CORTESIA — inscrição concedida gratuitamente ═══════════
+
+   RENOMEAÇÃO DE 18/09/2026: o que se chamava "brinde" passou a se chamar
+   CORTESIA. Só o nome mudou; a regra é a mesma — valor zero, estoque baixa
+   normalmente, nunca consome cupom, nunca entra como receita.
+
+   NOVA cortesia grava:        cortesia:true · pagamento:'Cortesia' · valor:0
+   LEGADO (antes da renomeação): brinde:true · pagamento:'Brinde'
+
+   NENHUM documento foi migrado. As cortesias antigas continuam no banco
+   exatamente como estavam, e é este helper que faz as duas formas serem a
+   mesma coisa para o resto do sistema.
+
+   USE SEMPRE `ehCortesia(i)`. Ler `i.brinde` ou `i.cortesia` direto deixa
+   metade dos registros de fora — e o pior caso não é cosmético: uma
+   cortesia antiga que deixe de ser reconhecida volta a aceitar cupom.
+
+   O terceiro teste (`pagamento === 'Brinde'`) é rede de segurança para
+   registro que tenha a forma de pagamento mas não o marcador booleano. */
+function ehCortesia(i){
+  if(!i) return false;
+  return i.cortesia === true || i.brinde === true || i.pagamento === 'Brinde' || i.pagamento === 'Cortesia';
+}
+/* Rótulo para exibir a forma de pagamento. Cortesia ANTIGA (gravada como
+   "Brinde") também aparece como "Cortesia" na tela, no CSV e no WhatsApp —
+   sem que o documento no banco seja tocado. */
+function formaPagamentoLabel(i){
+  if(ehCortesia(i)) return 'Cortesia';
+  return (i && i.pagamento) || '—';
+}
+
+/* Limite comercial: quantas camisas um mesmo documento pode levar numa
+   inscrição. Vive em config/settings, editável no painel — é regra de
+   negócio da corrida, não constante da aplicação.
+   AUSENTE = 1, que é exatamente o comportamento histórico. */
+function maxCamisasPorDoc(){
+  const n = Number(ST && ST.maxCamisasPorDoc);
+  return (n >= 1 && n <= 50) ? Math.floor(n) : 1;
+}
 
 /* Formas em que o MESMO documento pode ter sido gravado, para consulta
    por igualdade no servidor. O campo guarda o texto como foi digitado, e
@@ -2474,8 +2726,8 @@ function continuarNovaInscricao(){
 function msgParticipante(i){
   const base = `Olá! Sobre a minha inscrição na ${CONFIG.evento.nome}.%0A`
     + `Protocolo: ${i.protocolo}%0ANome: ${i.nome}%0A`
-    + `Camiseta: ${i.camiseta||'—'}%0AValor: ${BRL(i.valor||0)}%0A`
-    + `Forma: ${i.pagamento||'—'}%0A%0A`;
+    + `${totalCamisasDe(i)>1?'Camisas':'Camiseta'}: ${camisasTexto(i,', ')}%0AValor: ${BRL(i.valor||0)}%0A`
+    + `Forma: ${formaPagamentoLabel(i)}%0A%0A`;
   if(i.status==='cancelado')  return base+'Minha inscrição consta como *cancelada*. Podem verificar?';
   if(i.status==='confirmado') return base+(i.kitRetirado
       ? 'Tudo certo por aqui! Tenho uma dúvida:'
@@ -2529,14 +2781,18 @@ function renderConsulta(lista, termo){
         ? `Tudo pronto! Kit retirado. Nos vemos dia <b>${esc(CONFIG.evento.data)}</b>, largada às <b>6h</b>.`
         : `Pagamento <b>confirmado</b> — sua vaga está garantida. A retirada do kit começa em <b>${esc(CONFIG.evento.retiradaKit)}</b>, na recepção da Everest. Leve um documento com foto.`;
     } else {
-      const lk = linkParaValor(i.valor);
+      // Mais de uma camisa: sem link fixo para o valor total (a URL da
+      // InfinitePay carrega o preço unitário). Cai no pedido pelo WhatsApp.
+      const lk = totalCamisasDe(i)>1 ? '' : linkParaValor(i.valor);
       if(i.pagamento==='PIX'){
         passo = `Falta o pagamento. Faça o PIX de <b>${BRL(i.valor||0)}</b> e envie o comprovante no WhatsApp com o seu protocolo.`;
         acoes += `<div class="pix-box" style="margin-bottom:10px"><b style="color:#fff;font-style:italic;text-transform:uppercase">Chave PIX</b>
           <div style="color:var(--muted);font-size:12.5px;margin-top:5px">Favorecido: ${esc(CONFIG.pix.favorecido)}</div>
           <div class="pk"><code>${esc(CONFIG.pix.chave)}</code><button onclick="copiarPix()">Copiar</button></div></div>`;
       } else if(i.pagamento==='Cartão'){
-        passo = `Falta o pagamento. Pague no cartão em até <b>3x sem juros</b> e envie o comprovante no WhatsApp.`;
+        passo = totalCamisasDe(i)>1
+          ? `Falta o pagamento. Sua inscrição tem <b>${totalCamisasDe(i)} camisas</b> — total de <b>${BRL(i.valor||0)}</b>. Peça o link de pagamento pelo WhatsApp: a organização gera com o valor total.`
+          : `Falta o pagamento. Pague no cartão em até <b>3x sem juros</b> e envie o comprovante no WhatsApp.`;
         if(lk) acoes += `<a class="btn btn-cta" href="${esc(lk)}" target="_blank" rel="noopener" style="justify-content:center"><span>Pagar ${BRL(i.valor||0)} no cartão</span></a>`;
       } else {
         passo = `Falta o pagamento. Vá até a recepção da Everest — <b>${esc(CONFIG.evento.endereco)}</b> — e informe o seu protocolo.`;
@@ -2571,11 +2827,12 @@ function renderConsulta(lista, termo){
       </div>
       <div class="cons-linhas">
         <div><span>Distância</span><b>${esc(i.distancia||'—')}</b></div>
-        <div><span>Camiseta</span><b>${esc(i.camiseta||'—')}</b></div>
+        <div><span>${totalCamisasDe(i)>1?'Camisas':'Camiseta'}</span><b>${esc(camisasTexto(i))}</b></div>
+        ${totalCamisasDe(i)>1?`<div><span>Total de camisas</span><b>${totalCamisasDe(i)}</b></div>`:''}
         ${i.cupom?`<div><span>Valor original</span><b style="text-decoration:line-through;opacity:.75">${BRL(i.valorCheio||((i.valor||0)+(i.cupomDesconto||0)))}</b></div>
         <div><span>Cupom ${esc(i.cupom)} (${i.cupomPercentual||0}%)</span><b style="color:var(--ok)">− ${BRL(i.cupomDesconto||0)}</b></div>`:''}
         <div><span>Valor</span><b>${BRL(i.valor||0)}</b></div>
-        <div><span>Pagamento</span><b>${esc(i.pagamento||'—')}</b></div>
+        <div><span>Pagamento</span><b>${esc(formaPagamentoLabel(i))}</b></div>
       </div>
       <div class="cons-passo">${passo}</div>
       <div class="cons-acoes">${acoes}</div>
@@ -2711,13 +2968,63 @@ function ligarLightbox(){
 }
 
 /* ===================== INSCRIÇÃO ===================== */
-let sel={ distId:null, camiseta:null, pay:"PIX", cupom:null };
+/* `camisas` é a composição escolhida: { P:2, M:1 }. `camiseta` continua
+   existindo e é derivado dela — é o campo que as Rules validam e que o
+   código legado lê. Com maxCamisasPorDoc = 1 o mapa nunca passa de uma
+   chave com valor 1, e tudo se comporta como antes. */
+let sel={ distId:null, camiseta:null, camisas:{}, pay:"PIX", cupom:null };
+
+/* ═══════════ SELEÇÃO DE CAMISAS (site) ═══════════ */
+const selTotal = () => Object.values(sel.camisas||{}).reduce((s,n)=>s+Number(n||0),0);
+/* Tamanho "principal" — o de maior quantidade. Só serve para preencher
+   `camiseta` e manter compatibilidade; a verdade é `camisas`. */
+function selTamPrincipal(){
+  const c=sel.camisas||{}; let melhor=null, qtd=0;
+  for(const t of (CONFIG.camisetas||[]).map(x=>x.tam)){
+    const n=Number(c[t]||0); if(n>qtd){ qtd=n; melhor=t; }
+  }
+  return melhor;
+}
+/* Quanto ainda cabe: o que sobra do limite do documento. */
+const selRestante = () => Math.max(0, maxCamisasPorDoc() - selTotal());
+
+/* Muda a quantidade de um tamanho. Três travas, nesta ordem:
+   nunca negativo · nunca acima do estoque · nunca acima do limite.
+   A tela é conveniência: quem decide de verdade é a transação. */
+function mudarQtd(tam, passo){
+  const c=Object.assign({}, sel.camisas||{});
+  const atual=Number(c[tam]||0);
+  let novo=atual+Number(passo||0);
+  if(novo<0) novo=0;
+  const disp=restanteTam(tam);
+  if(novo>disp){ novo=disp; toast(disp>0?('Só restam '+disp+' do tamanho '+tam):('Tamanho '+tam+' esgotado')); }
+  const outros=selTotal()-atual;
+  const teto=maxCamisasPorDoc();
+  if(outros+novo>teto){ novo=Math.max(0,teto-outros);
+    toast('Limite de '+teto+' camisa'+(teto>1?'s':'')+' por inscrição'); }
+  if(novo>0) c[tam]=novo; else delete c[tam];
+  sel.camisas=c;
+  sel.camiseta=selTamPrincipal();     // legado sempre coerente
+  renderSizes(); renderTotaisCamisas();
+  if(el('resumoBox') && el('passo3') && el('passo3').classList.contains('on')) renderResumo();
+}
+/* Com limite 1 o clique no cartão do tamanho troca a seleção, como sempre
+   foi — sem [-]/[+], sem contador. É o que mantém a tela idêntica. */
+function selTam(t){
+  if(restanteTam(t)<=0) return;
+  if(maxCamisasPorDoc()<=1){
+    sel.camisas={ [t]:1 }; sel.camiseta=t;
+    renderSizes(); renderTotaisCamisas();
+    return;
+  }
+  mudarQtd(t, 1);
+}
 
 function abrirInscricao(distId){
   if(!ST){ toast("Só um instante, carregando..."); return; }
   if(totalEstoque()<=0){ toast("As inscrições estão encerradas — todos os kits foram vendidos."); return; }
   DB.evento("abriu_inscricao");
-  sel.distId=distId||CONFIG.distancias[0].id; sel.camiseta=null;
+  sel.distId=distId||CONFIG.distancias[0].id; sel.camiseta=null; sel.camisas={};
   el('pickGrid').innerHTML=CONFIG.distancias.map(d=>{
     const p=precoDe(d.id);
     return `<div class="pick ${d.id===sel.distId?'sel':''}" data-id="${d.id}" onclick="selDist('${d.id}')">
@@ -2731,10 +3038,44 @@ function abrirInscricao(distId){
   irPasso(1); abrirOverlay('ovInscricao');
 }
 function renderSizes(){
+  const multi = maxCamisasPorDoc() > 1;
   el('sizeGrid').innerHTML=CONFIG.camisetas.map(c=>{
     const disp=restanteTam(c.tam)>0;
-    return `<div class="size ${disp?'':'off'} ${sel.camiseta===c.tam?'sel':''}" ${disp?`onclick="selTam('${c.tam}')"`:''}>
-      <b>${c.tam}</b><small>${disp?'Disponível':'Indisponível'}</small></div>`;}).join("");
+    const q=Number((sel.camisas||{})[c.tam]||0);
+    if(!multi){
+      // LIMITE 1 — exatamente o cartão de sempre.
+      return `<div class="size ${disp?'':'off'} ${sel.camiseta===c.tam?'sel':''}" ${disp?`onclick="selTam('${c.tam}')"`:''}>
+        <b>${c.tam}</b><small>${disp?'Disponível':'Indisponível'}</small></div>`;
+    }
+    // MÚLTIPLAS — contador [−] n [+]. Botões grandes, pensados para o dedo.
+    const semEstoque=!disp, noTeto=selRestante()<=0 && q<=0, cheioTam=q>=restanteTam(c.tam);
+    return `<div class="size qtd ${q>0?'sel':''} ${semEstoque?'off':''}">
+      <b>${c.tam}</b>
+      <small>${semEstoque?'Esgotado':(restanteTam(c.tam)+' disp.')}</small>
+      <div class="qtd-ctrl">
+        <button type="button" class="qtd-btn" ${q<=0?'disabled':''} aria-label="Menos uma camisa ${c.tam}"
+                onclick="mudarQtd('${c.tam}',-1)">−</button>
+        <span class="qtd-num" aria-live="polite">${q}</span>
+        <button type="button" class="qtd-btn" ${(semEstoque||noTeto||cheioTam)?'disabled':''} aria-label="Mais uma camisa ${c.tam}"
+                onclick="mudarQtd('${c.tam}',1)">+</button>
+      </div></div>`;}).join("");
+}
+
+/* Faixa "Total de camisas: 4 / 5" logo abaixo da grade. Só aparece quando
+   o limite é maior que 1 — com 1 camisa não há o que contar. */
+function renderTotaisCamisas(){
+  const box=el('camTotais'); if(!box) return;
+  const teto=maxCamisasPorDoc();
+  if(teto<=1){ box.style.display='none'; box.innerHTML=''; return; }
+  const t=selTotal(), cheio=t>=teto;
+  box.style.display='block';
+  box.innerHTML=`<div class="cam-total ${cheio?'cheio':''}">
+      <span>Total de camisas</span><b>${t} / ${teto}</b>
+    </div>
+    <p class="cam-nota">${
+      t===0 ? 'Escolha pelo menos uma camisa para continuar.'
+      : cheio ? 'Você atingiu o limite de '+teto+' camisas nesta inscrição.'
+      : 'Você pode selecionar até '+teto+' camisas nesta inscrição.'}</p>`;
 }
 function selTam(t){ if(restanteTam(t)<=0)return; sel.camiseta=t; document.querySelectorAll('#sizeGrid .size').forEach(s=>s.classList.remove('sel')); [...document.querySelectorAll('#sizeGrid .size')].find(s=>s.querySelector('b').textContent===t).classList.add('sel'); }
 function selDist(id){ sel.distId=id; document.querySelectorAll('#pickGrid .pick').forEach(p=>p.classList.toggle('sel',p.dataset.id===id)); }
@@ -2793,7 +3134,7 @@ async function resgatarCupom(codigo){
   abrirInscricao();                 // já seleciona o lote/preço atuais e zera o cupom
   const d=distSel()||CONFIG.distancias[0];
   const bruto=precoDe(d.id)+(CONFIG.taxaServico||0);
-  const r=await aplicarCupom(cod, bruto, sel.pay);   // revalida contra o banco AGORA
+  const r=await aplicarCupom(cod, bruto, sel.pay, Math.max(1,selTotal()));   // revalida contra o banco AGORA
   const campo=el('fCupom'), msg=el('fCupomMsg'), btn=el('fCupomBtn');
   if(!r.valido){
     // Acabou entre a vitrine e o clique: não gera inscrição com desconto falso.
@@ -2842,7 +3183,7 @@ async function btnCupomSite(){
   btn.disabled=true;
   try{
     const d=distSel(), bruto=precoDe(d.id)+(CONFIG.taxaServico||0);
-    const r=await aplicarCupom(cod, bruto, sel.pay);
+    const r=await aplicarCupom(cod, bruto, sel.pay, Math.max(1,selTotal()));
     if(!r.valido){ sel.cupom=null; msg.textContent=r.motivo; msg.className='cupom-msg ruim'; campo.disabled=false; btn.textContent='Aplicar'; }
     else{
       sel.cupom={ codigo:r.codigo, percentual:r.percentual };
@@ -2865,7 +3206,7 @@ function irPasso(n){ document.querySelectorAll('#ovInscricao .step-pane').forEac
 function markErr(id,bad){ const f=el(id).closest('.field')||el(id).parentElement; f.classList.toggle('err',bad); return !bad; }
 
 async function passo(n){
-  if(n===2){ if(!sel.camiseta){ toast("Escolha um tamanho de camiseta disponível"); return; } DB.evento("escolheu_tamanho"); }
+  if(n===2){ if(selTotal()<1){ toast(maxCamisasPorDoc()>1?"Escolha pelo menos uma camisa":"Escolha um tamanho de camiseta disponível"); return; } DB.evento("escolheu_tamanho"); }
   if(n===3){
     let ok=true, aviso='';
     const ehCPF = el('fDocTipo').value==='CPF';
@@ -2934,15 +3275,18 @@ function distSel(){ return CONFIG.distancias.find(d=>d.id===sel.distId); }
 function renderResumo(){
   const d=distSel(); if(!d) return;
   const p=precoDe(d.id), tx=CONFIG.taxaServico||0;
-  const brutoCent=centDe(p)+centDe(tx);
+  // PREÇO LINEAR: unitário do lote × quantidade de camisas.
+  const qtd=Math.max(1,selTotal());
+  const brutoCent=(centDe(p)+centDe(tx))*qtd;
   const c=cupomCalc(brutoCent);
   el('resumoBox').innerHTML=`
     <div class="rl"><span>Participante</span><b>${el('fNome').value}</b></div>
     <div class="rl"><span>${el('fDocTipo').value}</span><b>${el('fDoc').value}</b></div>
     <div class="rl"><span>Distância</span><b>${d.nome}</b></div>
-    <div class="rl"><span>Camiseta</span><b>${sel.camiseta}</b></div>
-    <div class="rl"><span>Inscrição</span><b>${BRL(p)}</b></div>
-    ${tx?`<div class="rl"><span>Taxa</span><b>${BRL(tx)}</b></div>`:""}
+    <div class="rl"><span>${qtd>1?'Camisas':'Camiseta'}</span><b>${esc(camisasTexto({camisas:sel.camisas,camiseta:sel.camiseta}))}</b></div>
+    ${qtd>1?`<div class="rl"><span>Total de camisas</span><b>${qtd}</b></div>`:''}
+    <div class="rl"><span>Inscrição${qtd>1?` (${qtd} × ${BRL(p)})`:''}</span><b>${BRL(p*qtd)}</b></div>
+    ${tx?`<div class="rl"><span>Taxa${qtd>1?` (${qtd}×)`:''}</span><b>${BRL(tx*qtd)}</b></div>`:""}
     ${sel.cupom?`<div class="rl"><span>Cupom ${esc(sel.cupom.codigo)} (${sel.cupom.percentual}%)</span><b style="color:var(--ok)">− ${BRL(reaisDe(c.descontoCent))}</b></div>`:""}
     <div class="rl total"><span>Total</span><b>${BRL(reaisDe(c.finalCent))}</b></div>`;
 }
@@ -2969,16 +3313,27 @@ function telValido(v){ const d=soDigitos(v); return d.length===10||d.length===11
 function protocolo(){ return "EVR-"+Date.now().toString(36).toUpperCase().slice(-5)+Math.floor(Math.random()*90+10); }
 
 async function gerarInscricao(){
-  if(!sel.camiseta){ toast("Escolha o tamanho da camiseta"); irPasso(1); return; }
-  if(restanteTam(sel.camiseta)<=0){ toast("Esse tamanho acabou. Escolha outro."); irPasso(1); renderSizes(); return; }
+  // Confere a composição inteira. A tela é conveniência; a validação
+  // definitiva é a transação da camada de dados.
+  if(selTotal()<1){ toast("Escolha pelo menos uma camisa"); irPasso(1); return; }
+  const teto=maxCamisasPorDoc();
+  if(selTotal()>teto){ toast("Limite de "+teto+" camisa"+(teto>1?"s":"")+" por inscrição"); irPasso(1); renderSizes(); return; }
+  const semEstoque=Object.entries(sel.camisas).filter(([t,q])=>restanteTam(t)<Number(q||0));
+  if(semEstoque.length){
+    toast(semEstoque.map(([t,q])=>t+": só restam "+restanteTam(t)).join(' · '));
+    irPasso(1); renderSizes(); renderTotaisCamisas(); return;
+  }
   const d=distSel(), p=precoDe(d.id), tx=CONFIG.taxaServico||0, proto=protocolo();
-  const brutoCent=centDe(p)+centDe(tx);
+  const qtdCamisas=selTotal();
+  const brutoCent=(centDe(p)+centDe(tx))*qtdCamisas;
   // Cartão nunca sai daqui com cupom: o link do lote cobra o valor cheio.
   if(sel.pay==='Cartão' && sel.cupom) limparCupomSite('Cupom removido: não vale para cartão.');
   const cupomCod = sel.cupom ? sel.cupom.codigo : null;
   const calc = cupomCalc(brutoCent);
   const total = reaisDe(calc.finalCent);
-  const insc={ protocolo:proto, status:"pendente", distanciaId:d.id, distancia:d.nome, camiseta:sel.camiseta,
+  const insc={ protocolo:proto, status:"pendente", distanciaId:d.id, distancia:d.nome,
+    camiseta:sel.camiseta,                       // legado: tamanho principal
+    camisas:Object.assign({},sel.camisas), totalCamisas:qtdCamisas,
     nome:el('fNome').value.trim(), docTipo:el('fDocTipo').value, documento:el('fDoc').value.trim(), cpf:(el('fDocTipo').value==='CPF'?el('fDoc').value.trim():''),
     nascimento:el('fNasc').value, genero:el('fGenero').value,
     celular:el('fCel').value.trim(), email:el('fEmail').value.trim(), cidade:el('fCidade').value.trim(),
@@ -3001,7 +3356,13 @@ async function gerarInscricao(){
     el('pixBox').style.display = ehPix?'block':'none';
     el('presBox').style.display = ehPix?'none':'block';
     const ehCartao = insc.pagamento==='Cartão';
-    const lkCartao = linkCartaoAtual();
+    /* CARTÃO COM MAIS DE UMA CAMISA: o link da InfinitePay tem o valor
+       FIXO dentro da URL (…-79,90). Não existe link para R$ 159,80, e
+       inventar um seria cobrar errado. Então o link é suprimido e o fluxo
+       cai no caminho que JÁ EXISTE — pedir o link à organização — só que
+       agora com o valor total e a composição na mensagem. */
+    const varias = totalCamisasDe(insc) > 1;
+    const lkCartao = varias ? '' : linkCartaoAtual();
     if(ehCartao){
       if(lkCartao){
         el('presTitulo').textContent='Pague no cartão em até 3x';
@@ -3009,7 +3370,10 @@ async function gerarInscricao(){
           +'<div style="margin-top:16px"><a class="btn btn-cta" href="'+lkCartao+'" target="_blank" rel="noopener" style="padding:15px 30px;font-size:15px"><span>Pagar no cartão agora</span></a></div>';
       } else {
         el('presTitulo').textContent='Pagamento no cartão pelo WhatsApp';
-        el('presInfo').innerHTML='Em até <b>3x sem juros</b>. Toque no botão abaixo: você vai para o WhatsApp da Everest com seus dados já preenchidos e a equipe te envia o link de pagamento.';
+        el('presInfo').innerHTML = varias
+          ? 'Sua inscrição tem <b>'+totalCamisasDe(insc)+' camisas</b> ('+esc(camisasTexto(insc))+'), total de <b>'+BRL(insc.valor||0)+'</b>.<br>'
+            +'Para pagar no cartão em até <b>3x sem juros</b>, toque no botão abaixo: a equipe da Everest gera o link com o valor total e te envia pelo WhatsApp.'
+          : 'Em até <b>3x sem juros</b>. Toque no botão abaixo: você vai para o WhatsApp da Everest com seus dados já preenchidos e a equipe te envia o link de pagamento.';
       }
     } else if(!ehPix){
       el('presTitulo').textContent='Pague na recepção';
@@ -3020,14 +3384,22 @@ async function gerarInscricao(){
       : ehCartao
       ? (lkCartao
          ? '<li>Toque em <b>Pagar no cartão agora</b> e conclua o pagamento (até 3x sem juros).</li><li>Envie o <b>comprovante + seu protocolo</b> no nosso WhatsApp.</li><li>A organização confirma e sua vaga + kit ficam garantidos.</li>'
-         : '<li>Toque no botão abaixo e fale com a Everest no WhatsApp.</li><li>A equipe te envia o <b>link de pagamento</b> (até 3x sem juros).</li><li>Após o pagamento, sua vaga + kit ficam garantidos.</li>')
+         : '<li>Toque no botão abaixo e fale com a Everest no WhatsApp.</li><li>A equipe te envia o <b>link de pagamento</b>'+(varias?' no valor total de <b>'+BRL(insc.valor||0)+'</b>':'')+' (até 3x sem juros).</li><li>Após o pagamento, sua vaga + kit ficam garantidos.</li>')
       : '<li>Vá até a recepção da Everest e faça o pagamento.</li><li>Informe o seu <b>protocolo</b> no atendimento.</li><li>A organização confirma e sua vaga + kit ficam garantidos.</li>';
     el('sucWppTxt').textContent = (ehPix || (ehCartao&&lkCartao)) ? 'Enviar comprovante no WhatsApp' : ehCartao ? 'Pedir link de pagamento' : 'Falar no WhatsApp';
-    const fim = ehPix ? 'Segue o comprovante do pagamento 👇' : ehCartao ? (lkCartao ? 'Paguei no *cartão* pelo link. Segue o comprovante 👇' : 'Quero pagar no *cartão* em até 3x sem juros. Podem me enviar o link de pagamento?') : 'Vou pagar em dinheiro na recepção.';
+    const fim = ehPix ? 'Segue o comprovante do pagamento 👇'
+      : ehCartao ? (lkCartao ? 'Paguei no *cartão* pelo link. Segue o comprovante 👇'
+          : (varias
+             ? 'Quero pagar no *cartão* em até 3x sem juros.%0A%0A*Pedido:* '+camisasTexto(insc,', ')
+               +'%0A*Total de camisas:* '+totalCamisasDe(insc)
+               +'%0A*Valor total:* '+BRL(insc.valor||0)
+               +'%0A%0APodem gerar o link de pagamento com esse valor?'
+             : 'Quero pagar no *cartão* em até 3x sem juros. Podem me enviar o link de pagamento?'))
+      : 'Vou pagar em dinheiro na recepção.';
     const linhaCupom = insc.cupom
       ? `%0AValor original: ${BRL(insc.valorCheio||0)}%0ACupom: ${insc.cupom} (${insc.cupomPercentual}%25) − ${BRL(insc.cupomDesconto||0)}`
       : '';
-    const msg=`Olá! Fiz minha inscrição na ${CONFIG.evento.nome}.%0AProtocolo: ${proto}%0ANome: ${insc.nome}%0ADistância: ${insc.distancia}%0ACamiseta: ${insc.camiseta}${linhaCupom}%0AValor: ${BRL(insc.valor)}%0AForma: ${insc.pagamento}%0A${fim}`;
+    const msg=`Olá! Fiz minha inscrição na ${CONFIG.evento.nome}.%0AProtocolo: ${proto}%0ANome: ${insc.nome}%0ADistância: ${insc.distancia}%0A${totalCamisasDe(insc)>1?'Camisas':'Camiseta'}: ${camisasTexto(insc,', ')}${linhaCupom}%0AValor: ${BRL(insc.valor)}%0AForma: ${insc.pagamento}%0A${fim}`;
     el('sucWpp').href="https://wa.me/"+CONFIG.whatsapp+"?text="+msg;
     trocarOverlay('ovInscricao','ovSucesso');
   }catch(e){
@@ -3076,17 +3448,21 @@ const ICO_WA='<svg viewBox="0 0 24 24"><path d="M17.6 6.3A7.9 7.9 0 0 0 12 4a7.9
 
 function msgSituacao(i){
   const nome=(i.nome||'').trim().split(' ')[0]||'';
-  const ev=CONFIG.evento, proto=i.protocolo||'—', cam=i.camiseta||'—', val=BRL(i.valor||0);
+  const ev=CONFIG.evento, proto=i.protocolo||'—', cam=camisasTexto(i,', '), val=BRL(i.valor||0);
+  const nCam=totalCamisasDe(i);
   const topo=`*${ev.nome}*`;
-  const dados=`*Protocolo:* ${proto}\n*Camiseta:* ${cam}`;
+  const dados=`*Protocolo:* ${proto}\n*${nCam>1?'Camisas':'Camiseta'}:* ${cam}`+(nCam>1?`\n*Total:* ${nCam} camisas`:'');
 
   if(i.status==='pendente'){
     let comoPagar;
     if(i.pagamento==='PIX')
       comoPagar=`*Pague com PIX*\n${CONFIG.pix.chave}\n_${CONFIG.pix.favorecido}_`;
-    else if(i.pagamento==='Cartão'){ const lk=linkParaValor(i.valor);
+    else if(i.pagamento==='Cartão'){
+      // Com mais de uma camisa não existe link fixo para o valor total:
+      // o link do lote carrega o preço unitário dentro da URL.
+      const lk = nCam>1 ? '' : linkParaValor(i.valor);
       comoPagar=lk?`*Pague no cartão* _(até 3x sem juros)_\n${lk}`
-                  :`*Cartão*\nMe chama aqui que eu gero o link de ${val} para você.`; }
+                  :`*Cartão*\nMe chama aqui que eu gero o link de ${val}${nCam>1?` (${nCam} camisas)`:''} para você.`; }
     else
       comoPagar=`*Pagamento em dinheiro*\nÉ só passar na recepção da Everest\n${ev.endereco}`;
 
@@ -3114,14 +3490,15 @@ function msgSituacao(i){
             `Te espero lá. *Bora pro topo!*` };
   }
 
-  /* BRINDE — confirmado, mas ninguém pagou nada.
+  /* CORTESIA — confirmada, mas ninguém pagou nada. Reconhece também o
+     formato legado (`brinde:true`), via ehCortesia().
      Dizer "Pagamento confirmado / Valor pago: R$ 0,00" para quem ganhou
      seria falso e esquisito de receber. Mesma estrutura da mensagem de
      confirmação (retirada do kit, data, endereço), só a abertura muda. */
-  if(i.brinde===true){
+  if(ehCortesia(i)){
     return { rotulo:'Avisar que pode retirar o kit', cor:'sit-conf',
       texto:`${topo}\n_Inscrição cortesia_\n\n`+
-            `Oi ${nome}, sua inscrição foi concedida como *cortesia (BRINDE)*.\n`+
+            `Oi ${nome}, sua inscrição foi concedida como *cortesia*.\n`+
             `Não há nada a pagar — sua vaga já está garantida.\n\n`+
             `${dados}\n*Valor:* R$ 0,00\n\n`+
             `*Retirada do kit*\nA partir de ${ev.retiradaKit}, na recepção da Everest\n${ev.endereco}\n`+
@@ -3160,8 +3537,10 @@ function renderAdmin(){
 
   el('admEstoque').innerHTML='<summary>Estoque de camisetas</summary><div class="est-grid">'+
     CONFIG.camisetas.map(c=>{
-      const pd=admCache.filter(x=>x.camiseta===c.tam&&x.status==='pendente').length;
-      const cf=admCache.filter(x=>x.camiseta===c.tam&&x.status==='confirmado').length;
+      // SOMA de unidades, não contagem de inscrições: uma inscrição com
+      // 3 × M pesa 3 na fila do M, não 1.
+      const pd=admCache.filter(x=>x.status==='pendente').reduce((s,x)=>s+qtdDoTamanho(x,c.tam),0);
+      const cf=admCache.filter(x=>x.status==='confirmado').reduce((s,x)=>s+qtdDoTamanho(x,c.tam),0);
       const disp=restanteTam(c.tam);
       return `<div class="est ${disp<=0?'zero':''} ${pd>disp?'alerta':''}"><b>${c.tam}</b><span>${disp} em estoque</span><small>${pd} aguard. · ${cf} conf.</small></div>`;
     }).join("")+'</div>';
@@ -3217,7 +3596,7 @@ function renderAdmin(){
       <td><b style="color:var(--amarelo)">${esc(i.protocolo)||'—'}</b><br><small style="color:var(--muted)">${dataBR(i.criadoEm)} · ${textoDias(i.criadoEm)}</small></td>
       <td>${esc(i.nome)}<br><small style="color:var(--muted)">${docTipoDe(i)} ${esc(docDe(i))||'—'} · ${esc(i.cidade)}</small>${dup(i)?'<br><span class="badge b-canc">documento repetido</span>':''}</td>
       <td><a class="wa" href="${waLink(i.celular)}" target="_blank" rel="noopener">${esc(i.celular)||'—'} ↗</a>${botaoSituacao(i)}</td>
-      <td>${esc(i.camiseta)}<br><small style="color:var(--muted)">${esc(i.pagamento)}</small></td>
+      <td>${esc(camisasTexto(i))}${totalCamisasDe(i)>1?`<br><small style="color:var(--amarelo)">${totalCamisasDe(i)} camisas</small>`:''}<br><small style="color:var(--muted)">${esc(formaPagamentoLabel(i))}</small></td>
       <td>${BRL(i.valor||0)}</td>
       <td style="min-width:200px">${etapas(i)}</td>
       <td style="white-space:nowrap">${acoes(i)}</td></tr>
@@ -3235,7 +3614,7 @@ function renderAdmin(){
       <div class="ic-data">Inscrito em ${dataBR(i.criadoEm)} · ${textoDias(i.criadoEm)}</div>
       ${dup(i)?'<div style="margin-top:7px"><span class="badge b-canc">documento repetido</span></div>':''}
       <div class="ic-tags">
-        <span>${esc(i.distancia)}</span><span>Camiseta ${esc(i.camiseta)||'—'}</span><span>${esc(i.pagamento)}</span>
+        <span>${esc(i.distancia)}</span><span>${totalCamisasDe(i)>1?'Camisas: ':'Camiseta '}${esc(camisasTexto(i))}</span><span>${esc(formaPagamentoLabel(i))}</span>
         <span class="ic-valor">${BRL(i.valor||0)}</span>
         ${i.desconto>0?`<span class="ic-desc">desconto ${BRL(i.desconto)}</span>`:''}
       </div>
@@ -3308,7 +3687,7 @@ function renderKitInsc(id, msg, ruim){
     </div>` : '';
   box.innerHTML=`<div style="padding:12px 4px">
     <div style="font-weight:800;font-style:italic;text-transform:uppercase;font-size:13px;color:var(--amarelo);margin-bottom:4px">Quem retirou o kit?</div>
-    <p style="color:var(--muted);font-size:12px;margin:0 0 10px">${esc(i.nome)} · camiseta <b style="color:#fff">${esc(i.camiseta)||'—'}</b> · ${docTipoDe(i)} ${esc(docDe(i))||'—'}</p>
+    <p style="color:var(--muted);font-size:12px;margin:0 0 10px">${esc(i.nome)} · ${totalCamisasDe(i)>1?'camisas':'camiseta'} <b style="color:#fff">${esc(camisasTexto(i))}</b>${totalCamisasDe(i)>1?` (<b style="color:var(--amarelo)">${totalCamisasDe(i)} no total</b>)`:''} · ${docTipoDe(i)} ${esc(docDe(i))||'—'}</p>
     ${aviso}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="mini ${tipo==='proprio'?'ok':'leve'}" onclick="escolherRetirante('${esc(id)}','proprio')">A própria pessoa</button>
@@ -3334,7 +3713,7 @@ async function confirmarEntregaKit(id){
     if(!nomeCompleto(nome)){ renderKitInsc(id,'Informe o nome completo de quem está retirando.',true); return; }
     if(!cpfValido(cpf)){ renderKitInsc(id,'CPF de quem está retirando é inválido.',true); return; }
   }
-  if(!confirm("ENTREGAR O KIT\n\n"+i.nome+"\nCamiseta: "+(i.camiseta||'—')+"\n\n"+
+  if(!confirm("ENTREGAR O KIT\n\n"+i.nome+"\n"+(totalCamisasDe(i)>1?"Camisas: "+camisasTexto(i,", ")+"  ("+totalCamisasDe(i)+" no total)":"Camiseta: "+camisasTexto(i))+"\n\n"+
       (tipo==='terceiro' ? "Retirado por TERCEIRO:\n"+nome+"\nCPF "+mascaraCPF(cpf)
                          : "Retirado pela PRÓPRIA pessoa inscrita.")+"\n\nConfirmar entrega?")) return;
   emAndamento.add(id);
@@ -3386,7 +3765,13 @@ async function setStatus(id,status){
   if(status==='confirmado'){
     const c=admCache.filter(x=>x.status==='confirmado').length;
     if(c>=CONFIG.vagasTotais){ if(!confirm("As vagas já estão no limite ("+CONFIG.vagasTotais+"). Confirmar mesmo assim?")) return; }
-    if(i.camiseta && restanteTam(i.camiseta)<=0){ if(!confirm("O estoque do tamanho "+i.camiseta+" está zerado. Confirmar mesmo assim?")) return; }
+    // Aviso de estoque: confere TODOS os tamanhos da inscrição, não só um.
+    // Com uma camisa o texto sai igual ao de antes.
+    const faltando=Object.entries(camisasDe(i)).filter(([t,q])=>restanteTam(t)<Number(q||0));
+    if(faltando.length){
+      const txt=faltando.map(([t,q])=>t+': pedidas '+q+', em estoque '+restanteTam(t)).join('\n');
+      if(!confirm("ESTOQUE INSUFICIENTE\n\n"+txt+"\n\nConfirmar mesmo assim?")) return;
+    }
   }
   emAndamento.add(id);
   try{
@@ -3409,7 +3794,11 @@ async function setStatus(id,status){
   }catch(e){
     console.error(e);
     renderAdmin();
-    if(e && e.semResposta){
+    if(e && e.estoqueInsuficiente){
+      // A transação recusou: NADA foi gravado, nem status nem estoque.
+      alert("ESTOQUE INSUFICIENTE\n\n"+i.nome+"\n\n"+e.message+"\n\n"+
+            "Ajuste o estoque em \"Ajustes & estoque\" ou troque o tamanho antes de confirmar.");
+    }else if(e && e.semResposta){
       alert("SEM RESPOSTA DO SERVIDOR\n\nNão deu para saber se a alteração de "+i.nome+" foi gravada.\n\n"+
             "Clique em \"Atualizar\" para ver como ficou.\nSe não tiver mudado, pode repetir — repetir é seguro: "+
             "o estoque não baixa duas vezes.");
@@ -3534,7 +3923,16 @@ function renderConfig(){
       ${lotesCfg}</div>
     <div class="cfg-sec"><h3>Estoque de camisetas</h3>
       <p style="color:var(--muted);font-size:12.5px;margin:-6px 0 10px">Quantidade em estoque por tamanho. O cliente vê só "Disponível/Indisponível". <b>O estoque baixa 1 só quando você confirma o pagamento</b> — e volta se você reabrir/cancelar.</p>
-      <div class="cfg-cam">${cam}</div></div>
+      <div class="cfg-cam">${cam}</div>
+      <div class="mini-field" style="max-width:340px;margin-top:16px">
+        <label>Máximo de camisas por documento</label>
+        <input type="number" min="1" max="50" step="1" id="cfg_maxCamisas" value="${maxCamisasPorDoc()}">
+      </div>
+      <p style="color:var(--muted);font-size:12px;margin:6px 0 0">
+        Quantas camisas o mesmo CPF/RG pode levar numa única inscrição, somando todos os tamanhos.
+        <b>1</b> = uma camisa por pessoa (como sempre foi).
+        A pessoa continua podendo ter só <b>uma inscrição</b> — o que muda é quantas camisas cabem nela.
+      </p></div>
     <div class="cfg-sec"><h3>Itens do kit</h3>
       <p style="color:var(--muted);font-size:12.5px;margin:-6px 0 10px">Desmarque para mostrar "Esgotado". Use o selo para "Últimas unidades", "Promoção" etc.</p>
       <div class="cfg-kit">${kit}</div></div>
@@ -3605,6 +4003,16 @@ async function salvarConfig(){
     if(novo.disp!==!!antes.disp || novo.selo!==(antes.selo||"")) kit[i]=novo;
   });
   if(Object.keys(kit).length) patch.kit=kit;
+
+  /* LIMITE DE CAMISAS POR DOCUMENTO — regra comercial, não constante do código.
+     Só entra no patch se o organizador realmente mexeu no campo. Ausente no
+     banco vale 1, então não gravamos 1 só para "existir": settings tem teto de
+     20 chaves na Rule, e campo que não muda nada não merece ocupar uma. */
+  const mx=el('cfg_maxCamisas');
+  if(mx){
+    const v=parseInt(mx.value,10);
+    if(!isNaN(v) && v>=1 && v<=50 && v!==maxCamisasPorDoc()) patch.maxCamisasPorDoc=v;
+  }
 
   if(!Object.keys(patch).length){ toast("Nada mudou"); return; }
   await DB.patchSettings(patch);
@@ -3957,24 +4365,52 @@ function limparTeste(){
 }
 
 /* ═══════════════ VENDA NO BALCÃO ═══════════════ */
-let balTam=null, balUltima=null;
+/* `balCamisas` é a composição escolhida no balcão: { P:2, M:1 }.
+   `balTam` continua existindo como tamanho PRINCIPAL (maior quantidade),
+   para os pontos que ainda leem um tamanho só. Com maxCamisasPorDoc = 1 o
+   mapa nunca passa de uma chave com valor 1 — igual ao que era antes. */
+let balTam=null, balCamisas={}, balUltima=null;
+const balTotal = () => Object.values(balCamisas||{}).reduce((s,n)=>s+Number(n||0),0);
+function balTamPrincipal(){
+  let melhor=null, q=0;
+  for(const t of (CONFIG.camisetas||[]).map(x=>x.tam)){
+    const n=Number(balCamisas[t]||0); if(n>q){ q=n; melhor=t; }
+  }
+  return melhor;
+}
+/* Mesmas três travas do site: nunca negativo · nunca acima do estoque ·
+   nunca acima do limite do documento. A tela é conveniência; quem decide é
+   a transação de `criarComEstoque`. */
+function balMudarQtd(tam, passo){
+  const atual=Number(balCamisas[tam]||0);
+  let novo=atual+Number(passo||0);
+  if(novo<0) novo=0;
+  const disp=restanteTam(tam);
+  if(novo>disp){ novo=disp; toast(disp>0?('Só restam '+disp+' do tamanho '+tam):('Tamanho '+tam+' esgotado')); }
+  const outros=balTotal()-atual, teto=maxCamisasPorDoc();
+  if(outros+novo>teto){ novo=Math.max(0,teto-outros);
+    toast('Limite de '+teto+' camisa'+(teto>1?'s':'')+' por inscrição'); }
+  if(novo>0) balCamisas[tam]=novo; else delete balCamisas[tam];
+  balTam=balTamPrincipal();
+  renderBalSizes(); atualizaValorBal();
+}
 
 let caixaPeriodo='hoje';
 function caixaDoDia(){
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const lista=admCache.filter(i=>i.origem==='balcao' && i.status!=='cancelado' &&
     (caixaPeriodo==='tudo' || (i.criadoEm||0)>=hoje.getTime()));
-  const porPag={}; let total=0, descontos=0, cupons=0, comCupom=0, brindes=0;
+  const porPag={}; let total=0, descontos=0, cupons=0, comCupom=0, cortesias=0;
   lista.forEach(i=>{ if(i.status==='confirmado'){
-    // Brinde entra na contagem própria, não em porPag: aquela linha soma
-    // DINHEIRO por forma de pagamento, e "Brinde — R$ 0,00" daria a
+    // Cortesia entra na contagem própria, não em porPag: aquela linha soma
+    // DINHEIRO por forma de pagamento, e "Cortesia — R$ 0,00" daria a
     // entender que é uma forma de pagamento que rendeu zero.
-    if(i.brinde===true) brindes++;
+    if(ehCortesia(i)) cortesias++;
     else porPag[i.pagamento]=(porPag[i.pagamento]||0)+(i.valor||0);
-    total+=(i.valor||0); descontos+=(i.desconto||0);   // brinde soma 0 nos dois
+    total+=(i.valor||0); descontos+=(i.desconto||0);   // cortesia soma 0 nos dois
     if(i.cupom){ cupons+=(i.cupomDesconto||0); comCupom++; }
   }});
-  return { qtd:lista.length, total, porPag, descontos, cupons, comCupom, brindes };
+  return { qtd:lista.length, total, porPag, descontos, cupons, comCupom, cortesias };
 }
 function setCaixaPeriodo(p){ caixaPeriodo=p; renderBalcao(); }
 function renderBalcao(){
@@ -3992,8 +4428,8 @@ function renderBalcao(){
         </div>
       </div>
       <div class="cx-linha"><span>Inscrições ${caixaPeriodo==='hoje'?'de hoje':'no total'}</span><b>${cx.qtd}</b></div>
-      ${Object.entries(cx.porPag).map(([k,v])=>`<div class="cx-linha"><span>${k}</span><b>${BRL(v)}</b></div>`).join('')||(cx.brindes?'':'<div class="cx-linha"><span>Nenhuma venda ainda</span><b>—</b></div>')}
-      ${cx.brindes?`<div class="cx-linha"><span>Brindes</span><b style="color:var(--ok)">${cx.brindes} ${cx.brindes===1?'inscrição':'inscrições'}</b></div>`:''}
+      ${Object.entries(cx.porPag).map(([k,v])=>`<div class="cx-linha"><span>${k}</span><b>${BRL(v)}</b></div>`).join('')||(cx.cortesias?'':'<div class="cx-linha"><span>Nenhuma venda ainda</span><b>—</b></div>')}
+      ${cx.cortesias?`<div class="cx-linha"><span>Cortesias</span><b style="color:var(--ok)">${cx.cortesias} ${cx.cortesias===1?'inscrição':'inscrições'}</b></div>`:''}
       ${cx.descontos>0?`<div class="cx-linha"><span>Descontos concedidos</span><b style="color:var(--alerta)">− ${BRL(cx.descontos)}</b></div>`:''}
       ${cx.cupons>0?`<div class="cx-linha"><span>Cupons (${cx.comCupom})</span><b style="color:var(--alerta)">− ${BRL(cx.cupons)}</b></div>`:''}
       <div class="cx-linha cx-total"><span>Total recebido</span><b>${BRL(cx.total)}</b></div>
@@ -4047,6 +4483,7 @@ function renderBalcao(){
 
       <div class="step-title" style="font-size:14px;margin:18px 0 10px">Tamanho da camiseta <span class="req" style="color:var(--amarelo)">*</span></div>
       <div class="size-grid" id="balSizes"></div>
+      <div id="balTotais" style="display:none"></div>
 
       <div class="step-title" style="font-size:14px;margin:20px 0 10px">Como pagou <span class="req" style="color:var(--amarelo)">*</span></div>
       <div class="pay-opts bal-pag3" id="balPag">
@@ -4071,8 +4508,8 @@ function renderBalcao(){
         </div>
       </details>
 
-      <label class="checkrow" style="margin-top:16px"><input type="checkbox" id="balBrinde" onchange="atualizaBrindeBal()">
-        <span><b>BRINDE</b> — inscrição concedida gratuitamente. <small style="color:var(--muted)">Valor R$ 0,00, não entra como receita; o estoque baixa normalmente.</small></span></label>
+      <label class="checkrow" style="margin-top:16px"><input type="checkbox" id="balCortesia" onchange="atualizaCortesiaBal()">
+        <span><b>CORTESIA</b> — inscrição concedida gratuitamente. <small style="color:var(--muted)">Valor R$ 0,00, não entra como receita; o estoque baixa normalmente. O documento é opcional.</small></span></label>
       <label class="checkrow" style="margin-top:16px"><input type="checkbox" id="balPago" checked>
         <span><b>Pagamento já recebido</b> — a inscrição entra confirmada e o estoque baixa na hora.</span></label>
       <label class="checkrow"><input type="checkbox" id="balKit">
@@ -4085,7 +4522,7 @@ function renderBalcao(){
     </div>
 
     <div id="balSucesso"></div>`;
-  balTam=null; renderBalSizes();
+  balTam=null; balCamisas={}; renderBalSizes();
   el('balDoc').addEventListener('input',mascaraDocBal);
   el('balCel').addEventListener('input',e=>e.target.value=mascaraTel(e.target.value));
   el('balTrocoBox').style.display='flex';
@@ -4100,13 +4537,42 @@ function mascaraDocBal(){
 
 function renderBalSizes(){
   const c=el('balSizes'); if(!c) return;
+  const multi = maxCamisasPorDoc() > 1;
   c.innerHTML=CONFIG.camisetas.map(x=>{
     const disp=restanteTam(x.tam)>0;
-    return `<div class="size ${disp?'':'off'} ${balTam===x.tam?'sel':''}" ${disp?`onclick="balSelTam('${x.tam}')"`:''}>
-      <b>${x.tam}</b><small>${disp?restanteTam(x.tam)+' un.':'esgotado'}</small></div>`;
+    const q=Number(balCamisas[x.tam]||0);
+    if(!multi){
+      // LIMITE 1 — o cartão clicável de sempre.
+      return `<div class="size ${disp?'':'off'} ${balTam===x.tam?'sel':''}" ${disp?`onclick="balSelTam('${x.tam}')"`:''}>
+        <b>${x.tam}</b><small>${disp?restanteTam(x.tam)+' un.':'esgotado'}</small></div>`;
+    }
+    const noTeto=(maxCamisasPorDoc()-balTotal())<=0 && q<=0, cheio=q>=restanteTam(x.tam);
+    return `<div class="size qtd ${q>0?'sel':''} ${disp?'':'off'}">
+      <b>${x.tam}</b><small>${disp?restanteTam(x.tam)+' un.':'esgotado'}</small>
+      <div class="qtd-ctrl">
+        <button type="button" class="qtd-btn" ${q<=0?'disabled':''} aria-label="Menos uma ${x.tam}"
+                onclick="balMudarQtd('${x.tam}',-1)">−</button>
+        <span class="qtd-num" aria-live="polite">${q}</span>
+        <button type="button" class="qtd-btn" ${(!disp||noTeto||cheio)?'disabled':''} aria-label="Mais uma ${x.tam}"
+                onclick="balMudarQtd('${x.tam}',1)">+</button>
+      </div></div>`;
   }).join('');
+  // Faixa de total, só quando o limite permite mais de uma camisa.
+  const box=el('balTotais');
+  if(box){
+    const teto=maxCamisasPorDoc();
+    if(teto<=1){ box.style.display='none'; box.innerHTML=''; }
+    else { const t=balTotal();
+      box.style.display='block';
+      box.innerHTML=`<div class="cam-total ${t>=teto?'cheio':''}"><span>Total de camisas</span><b>${t} / ${teto}</b></div>`;
+    }
+  }
 }
-function balSelTam(t){ if(restanteTam(t)<=0) return; balTam=t; renderBalSizes(); }
+function balSelTam(t){
+  if(restanteTam(t)<=0) return;
+  if(maxCamisasPorDoc()<=1){ balCamisas={ [t]:1 }; balTam=t; renderBalSizes(); atualizaValorBal(); return; }
+  balMudarQtd(t, 1);
+}
 /* Cupom aplicado no balcão: {codigo, percentual} ou null. */
 let balCupom=null;
 const brutoBalCent = () => centDe(precoDe(CONFIG.distancias[0].id)) + centDe(CONFIG.taxaServico||0);
@@ -4193,14 +4659,14 @@ async function btnCupomBalcao(){
     }
   } finally { btn.disabled=false; atualizaValorBal(); }
 }
-/* BRINDE ligado: some tudo que é cobrança. Desconto, cupom, formas de
+/* CORTESIA ligada: some tudo que é cobrança. Desconto, cupom, formas de
    pagamento e troco deixam de fazer sentido numa inscrição de R$ 0,00 —
    e deixá-los ativos só criaria estado contraditório para o operador.
    O motivo continua editável: é onde se registra por que foi dado. */
-function atualizaBrindeBal(){
-  const cb=el('balBrinde'); if(!cb) return;
+function atualizaCortesiaBal(){
+  const cb=el('balCortesia'); if(!cb) return;
   const on=cb.checked;
-  if(on && balCupom) limparCupomBal('Cupom removido: brinde já é gratuito.');
+  if(on && balCupom) limparCupomBal('Cupom removido: cortesia já é gratuita.');
   const dd=el('balDesconto'); if(dd && on) dd.value='';
   [['balDescBox',1],['balCupomBox',1]].forEach(([id])=>{
     const x=el(id); if(!x) return;
@@ -4214,13 +4680,13 @@ function atualizaBrindeBal(){
   const nota=el('balValorNota');
   if(on){
     el('balValorFinal').textContent=BRL(0);
-    if(nota) nota.innerHTML='<b style="color:var(--ok)">BRINDE</b> — gratuita, não entra como receita';
+    if(nota) nota.innerHTML='<b style="color:var(--ok)">CORTESIA</b> — gratuita, não entra como receita';
   } else atualizaValorBal();
 }
 
 function atualizaValorBal(){
-  if(el('balBrinde') && el('balBrinde').checked){
-    el('balValorFinal').textContent=BRL(0); return;   // brinde manda no valor
+  if(el('balCortesia') && el('balCortesia').checked){
+    el('balValorFinal').textContent=BRL(0); return;   // cortesia manda no valor
   }
   // Trava de exclusividade: se o operador digitar desconto com cupom aplicado,
   // o desconto é recusado na hora, com aviso. Nunca os dois somam.
@@ -4301,57 +4767,75 @@ function buscarBalcao(){
 
 async function salvarBalcao(){
   const nome=el('balNome').value.trim(), tipo=el('balDocTipo').value, doc=el('balDoc').value.trim(), cel=el('balCel').value.trim();
+  const cortesia=el('balCortesia').checked;
   if(!nomeCompleto(nome)){ toast("Digite o nome completo"); el('balNome').focus(); return; }
-  if(tipo==='CPF' ? !cpfValido(doc) : doc.length<5){ toast(tipo==='CPF'?"CPF inválido":"Informe o RG"); el('balDoc').focus(); return; }
+  /* DOCUMENTO: obrigatório em venda paga; OPCIONAL só na cortesia.
+     Vazio numa cortesia é aceito — e fica vazio mesmo. Jamais preencher
+     com zeros ou documento fictício: dado inventado é pior que ausente.
+     Se a pessoa informar, vale a mesma validação de sempre. */
+  if(!cortesia || doc){
+    if(tipo==='CPF' ? !cpfValido(doc) : doc.length<5){
+      toast(tipo==='CPF'?"CPF inválido":"Informe o RG"); el('balDoc').focus(); return; }
+  }
   if(!telValido(cel)){ toast("Celular inválido — use DDD + número"); el('balCel').focus(); return; }
-  if(!balTam){ toast("Escolha o tamanho da camiseta"); return; }
-  if(restanteTam(balTam)<=0){ toast("Esse tamanho acabou"); renderBalSizes(); return; }
+  if(balTotal()<1){ toast(maxCamisasPorDoc()>1?"Escolha pelo menos uma camisa":"Escolha o tamanho da camiseta"); return; }
+  const tetoBal=maxCamisasPorDoc();
+  if(balTotal()>tetoBal){ toast("Limite de "+tetoBal+" camisa"+(tetoBal>1?"s":"")+" por inscrição"); renderBalSizes(); return; }
+  const faltaBal=Object.entries(balCamisas).filter(([t,q])=>restanteTam(t)<Number(q||0));
+  if(faltaBal.length){ toast(faltaBal.map(([t])=>t+": só restam "+restanteTam(t)).join(' · ')); renderBalSizes(); return; }
 
+  // Sem documento não há como checar duplicidade — só acontece em cortesia.
   const chave=normaliza(doc).replace(/[^a-z0-9]/g,'');
-  const jaTem=admCache.find(i=>i.status!=='cancelado' && chaveDoc(i)===chave);
+  const jaTem=chave ? admCache.find(i=>i.status!=='cancelado' && chaveDoc(i)===chave) : null;
   if(jaTem && !confirm("ATENÇÃO\n\nJá existe inscrição com esse documento:\n"+jaTem.nome+" ("+jaTem.protocolo+")\n\nCadastrar mesmo assim?")) return;
 
-  /* BRINDE — inscrição concedida de graça.
+  /* CORTESIA — inscrição concedida de graça.
 
-     Financeiro: `valor` 0, `pagamento` 'Brinde', sem cupom e sem desconto
+     Financeiro: `valor` 0, `pagamento` 'Cortesia', sem cupom e sem desconto
      manual. Como toda soma de dinheiro do sistema parte de `valor` sobre
      status confirmado (receita no painel, receita e "a receber" na
      auditoria, caixa do balcão), somar zero já resolve: NENHUMA fórmula
      precisou mudar. `valorCheio` guarda quanto teria custado — é o que
      mostra o tamanho do benefício concedido, sem virar desconto.
 
-     `desconto` fica em 0 de propósito: desconto e brinde são coisas
-     diferentes no relatório, e inflar `descTotal` com o valor do brinde
+     `desconto` fica em 0 de propósito: desconto e cortesia são coisas
+     diferentes no relatório, e inflar `descTotal` com o valor da cortesia
      misturaria as duas.
 
      Logística: é uma inscrição completa. Entra CONFIRMADA e o estoque
      baixa pelo MESMO caminho atômico da venda paga (`baixarTam` +
-     `criarComEstoque`). Brinde não é "ignorar estoque" — a camiseta
+     `criarComEstoque`). Cortesia não é "ignorar estoque" — a camiseta
      física sai da caixa igual.                                          */
-  const brinde=el('balBrinde').checked;
-  const pago=brinde ? true : el('balPago').checked;
+  const pago=cortesia ? true : el('balPago').checked;
   const entregarAgora=pago && el('balKit').checked;
-  const forma=brinde ? 'Brinde' : balPagEscolhido();
+  const forma=cortesia ? 'Cortesia' : balPagEscolhido();
   if(forma==='Cartão' && balCupom) limparCupomBal('Cupom removido: não vale para cartão.');
   const brutoCent=brutoBalCent(), bruto=reaisDe(brutoCent);
   // Exclusividade: com cupom, o desconto manual é zero — e vice-versa.
-  // Brinde zera os dois: não há o que descontar de graça.
-  const desc = brinde ? 0 : (balCupom ? 0 : descontoBal());
-  const cupomCod = brinde ? null : (balCupom ? balCupom.codigo : null);
-  const cupDescCent = (!brinde && balCupom) ? descontoCupomBalCent() : 0;
-  const totalCent = brinde ? 0
+  // Cortesia zera os dois: não há o que descontar de graça.
+  const desc = cortesia ? 0 : (balCupom ? 0 : descontoBal());
+  const cupomCod = cortesia ? null : (balCupom ? balCupom.codigo : null);
+  const cupDescCent = (!cortesia && balCupom) ? descontoCupomBalCent() : 0;
+  const totalCent = cortesia ? 0
     : Math.max(0, brutoCent - Math.min(balCupom?cupDescCent:centDe(desc), brutoCent));
   const total = reaisDe(totalCent);
-  const motivo = brinde ? (el('balMotivo').value||'').trim() : (balCupom ? '' : (el('balMotivo').value||'').trim());
-  if(brinde && !confirm("INSCRIÇÃO COMO BRINDE\n\n"+nome+"\nCamiseta: "+balTam+
+  const motivo = cortesia ? (el('balMotivo').value||'').trim() : (balCupom ? '' : (el('balMotivo').value||'').trim());
+  const compBal=Object.assign({},balCamisas), qtdBal=balTotal();
+  const compTxt=camisasTexto({camisas:compBal, camiseta:balTam});
+  if(cortesia && !confirm("INSCRIÇÃO COMO CORTESIA\n\n"+nome+
+      (doc?("\n"+tipo+" "+doc):"\n(sem documento informado)")+
+      "\n"+(qtdBal>1?"Camisas: "+camisasTexto({camisas:compBal},", ")+"  ("+qtdBal+" no total)":"Camiseta: "+compTxt)+
       "\n\nValor: R$ 0,00 (gratuita — não entra como receita)\nValor cheio de referência: "+BRL(bruto)+
-      (motivo?"\nMotivo: "+motivo:"")+"\n\nO estoque "+balTam+" será reduzido em 1.\n\nConfirmar?")) return;
+      (motivo?"\nMotivo: "+motivo:"")+
+      "\n\nO estoque será reduzido em "+qtdBal+" camisa"+(qtdBal>1?"s":"")+".\n\nConfirmar?")) return;
   if(desc>0 && !confirm("DESCONTO DE "+BRL(desc)+"\n\nValor cheio: "+BRL(bruto)+"\nValor a cobrar: "+BRL(total)+(motivo?"\nMotivo: "+motivo:"")+"\n\nConfirmar?")) return;
   if(cupomCod && !confirm("CUPOM "+cupomCod+" — "+balCupom.percentual+"%\n\nValor cheio: "+BRL(bruto)+"\nValor a cobrar: "+BRL(total)+"\n\nConfirmar?")) return;
   const d=CONFIG.distancias[0], proto=protocolo(), agora=Date.now();
 
   const insc={ protocolo:proto, status: pago?'confirmado':'pendente',
-    distanciaId:d.id, distancia:d.nome, camiseta:balTam,
+    distanciaId:d.id, distancia:d.nome,
+    camiseta:balTam,                              // legado: tamanho principal
+    camisas:compBal, totalCamisas:qtdBal,
     nome, docTipo:tipo, documento:doc, cpf:(tipo==='CPF'?doc:''),
     nascimento:el('balNasc').value, genero:el('balGenero').value,
     celular:cel, email:el('balEmail').value.trim(), cidade:el('balCidade').value.trim(),
@@ -4364,10 +4848,12 @@ async function salvarBalcao(){
     // dela mesma. Sem pergunta extra — a venda presencial tem que ser rápida.
     retiradoPorTipo: entregarAgora ? 'proprio' : null,
     retiradoPorNome: null, retiradoPorCpf: null };
-  if(brinde) insc.brinde=true;   // marcador único; ausente = inscrição normal
-  // Tamanho cujo estoque baixa junto com a criação (venda paga ou brinde).
-  const baixarTam = (pago && CONFIG.camisetas.some(c=>c.tam===balTam)) ? balTam : null;
-  insc.estoqueBaixado = !!baixarTam;   // marcador: nasce coerente com o que foi feito
+  // Marcador NOVO. Cortesia antiga tem `brinde:true` — quem reconhece as
+  // duas formas é ehCortesia(). Nada é migrado.
+  if(cortesia) insc.cortesia=true;
+  // Composição cujo estoque baixa junto com a criação (venda paga ou cortesia).
+  const baixarTam = pago ? compBal : null;
+  insc.estoqueBaixado = !!(baixarTam && qtdBal>0);   // marcador: nasce coerente com o que foi feito
 
   try{
     // Inscrição, cupom e baixa de estoque nascem juntos, atomicamente.
@@ -4384,9 +4870,10 @@ async function salvarBalcao(){
       try{
         const cam=await DB.estoqueAtual();
         if(cam){ ST.camiseta=cam;
-          if(Number(cam[balTam])<0){
-            alert("ATENÇÃO — ESTOQUE NEGATIVO\n\nO tamanho "+balTam+" ficou em "+cam[balTam]+
-                  ".\n\nFoi vendido mais do que havia em estoque. Confira em \"Ajustes & estoque\".");
+          const neg=Object.keys(compBal).filter(t=>Number(cam[t])<0);
+          if(neg.length){
+            alert("ATENÇÃO — ESTOQUE NEGATIVO\n\n"+neg.map(t=>t+": "+cam[t]).join("\n")+
+                  "\n\nFoi vendido mais do que havia em estoque. Confira em \"Ajustes & estoque\".");
           }
         }
       }catch(e2){ console.warn(e2); }
@@ -4413,6 +4900,10 @@ async function salvarBalcao(){
       limparCupomBal(e.message+' Nada foi salvo.');
       atualizaValorBal();
       alert("CUPOM RECUSADO\n\n"+e.message+"\n\nNada foi salvo. Refaça a venda sem o cupom ou com outro código.");
+    } else if(e && e.estoqueInsuficiente){
+      // A transação recusou antes de gravar: a inscrição NÃO foi criada.
+      try{ const cam=await DB.estoqueAtual(); if(cam){ ST.camiseta=cam; renderBalSizes(); } }catch(e2){ console.warn(e2); }
+      alert("ESTOQUE INSUFICIENTE\n\n"+e.message+"\n\nA inscrição NÃO foi criada. Os números na tela já foram atualizados.");
     } else {
       toast("Erro ao salvar. Tente de novo.");
     }
@@ -4428,8 +4919,8 @@ function mostrarSucessoBalcao(i){
       <div class="bal-proto">${esc(i.protocolo)}</div>
       <div class="bal-resumo">
         <div><span>Nome</span><b>${esc(i.nome)}</b></div>
-        <div><span>Camiseta</span><b>${esc(i.camiseta)}</b></div>
-        <div><span>Pagamento</span><b>${esc(i.pagamento)} · ${BRL(i.valor)}</b></div>
+        <div><span>${totalCamisasDe(i)>1?'Camisas':'Camiseta'}</span><b>${esc(camisasTexto(i))}</b></div>
+        <div><span>Pagamento</span><b>${esc(formaPagamentoLabel(i))} · ${BRL(i.valor)}</b></div>
         ${i.desconto>0?`<div><span>Desconto</span><b style="color:var(--alerta)">− ${BRL(i.desconto)}${i.motivoDesconto?' ('+esc(i.motivoDesconto)+')':''}</b></div>`:''}
         ${i.cupom?`<div><span>Cupom ${esc(i.cupom)}</span><b style="color:var(--alerta)">− ${BRL(i.cupomDesconto||0)} (${i.cupomPercentual||0}%)</b></div>`:''}
         <div><span>Situação</span><b>${i.status==='confirmado'?'Pago':'Aguardando'}${i.kitRetirado?' · kit entregue':''}</b></div>
@@ -4465,8 +4956,8 @@ function imprimirComprovante(proto){
     <table>
       <tr><td>Nome</td><td>${esc(i.nome)}</td></tr>
       <tr><td>${docTipoDe(i)}</td><td>${esc(docDe(i))}</td></tr>
-      <tr><td>Camiseta</td><td>${esc(i.camiseta)}</td></tr>
-      <tr><td>Pagamento</td><td>${esc(i.pagamento)}</td></tr>
+      <tr><td>${totalCamisasDe(i)>1?'Camisas':'Camiseta'}</td><td>${esc(camisasTexto(i))}</td></tr>
+      <tr><td>Pagamento</td><td>${esc(formaPagamentoLabel(i))}</td></tr>
       ${i.desconto>0?`<tr><td>Valor cheio</td><td>${BRL(i.valorCheio||i.valor+i.desconto)}</td></tr><tr><td>Desconto${i.motivoDesconto?' ('+esc(i.motivoDesconto)+')':''}</td><td>- ${BRL(i.desconto)}</td></tr>`:''}
       ${i.cupom?`<tr><td>Valor cheio</td><td>${BRL(i.valorCheio||((i.valor||0)+(i.cupomDesconto||0)))}</td></tr><tr><td>Cupom ${esc(i.cupom)} (${i.cupomPercentual||0}%)</td><td>- ${BRL(i.cupomDesconto||0)}</td></tr>`:''}
       <tr><td>Valor pago</td><td>${BRL(i.valor)}</td></tr>
@@ -4515,14 +5006,14 @@ async function calcularAuditoria(){
   const cupConversao=cupTotalInscr?(cupConf/cupTotalInscr*100):null;
   const parado=pend.reduce((s,i)=>s+(i.valor||0),0);
   /* Ticket médio = quanto rende, em média, uma inscrição VENDIDA.
-     Brinde é inscrição confirmada de verdade e continua contado em
+     Cortesia é inscrição confirmada de verdade e continua contada em
      `conf`, na receita, no estoque e em todo o resto — mas dividir a
      receita por ele puxaria a média para baixo sem que nada tenha sido
      vendido mais barato. Fora do divisor, e fora do numerador junto
      (a receita dele já é zero, então `receita` não muda). */
-  const confPagas=conf.filter(i=>i.brinde!==true);
+  const confPagas=conf.filter(i=>!ehCortesia(i));
   const receitaPagas=confPagas.reduce((s,i)=>s+(i.valor||0),0);
-  const brindes=conf.filter(i=>i.brinde===true).length;
+  const cortesias=conf.filter(i=>ehCortesia(i)).length;
   const ticket=confPagas.length?receitaPagas/confPagas.length:0;
 
   const temposPg=conf.filter(i=>i.confirmadoEm&&i.criadoEm).map(i=>(i.confirmadoEm-i.criadoEm)/3600000);
@@ -4544,7 +5035,11 @@ async function calcularAuditoria(){
   const dEvento=CONFIG.evento.dataISO?Math.ceil((new Date(CONFIG.evento.dataISO+'T00:00:00')-agora)/DIA):null;
   const projecao=dEvento&&ritmo7>0?Math.round(ativas.length+ritmo7*dEvento):null;
 
-  const porTam={}; ativas.forEach(i=>{ if(i.camiseta) porTam[i.camiseta]=(porTam[i.camiseta]||0)+1; });
+  // Pedidos por tamanho = SOMA das unidades. Com uma camisa por inscrição
+  // o resultado é idêntico ao de antes; com várias, passa a contar certo.
+  const porTam={}; ativas.forEach(i=>{ const c=camisasDe(i);
+    for(const t of Object.keys(c)) porTam[t]=(porTam[t]||0)+Number(c[t]||0); });
+  const totalCamisasAtivas=ativas.reduce((s,i)=>s+totalCamisasDe(i),0);
   const tamanhos=CONFIG.camisetas.map(c=>{
     const pedidos=porTam[c.tam]||0, restante=restanteTam(c.tam);
     const rit=diasAtivos>0?pedidos/Math.max(1,diasAtivos):0;
@@ -4615,7 +5110,8 @@ async function calcularAuditoria(){
            diasAtivos, ultimos7, ritmo7, restantes,
            diasEsgotar, dEvento, projecao, tamanhos, porPag, porCidade, porGenero, faixas, idadeMedia,
            optin, duplicados, telRuins, problemas:P, recomendacoes:R, porDia, porSemana, porHora, porOrigem, descTotal, comDesc,
-           cupons, cupTotalInscr, cupTotalDesc, cupConf, cupConversao, brindes, confPagas };
+           cupons, cupTotalInscr, cupTotalDesc, cupConf, cupConversao, cortesias, confPagas,
+           totalCamisasAtivas };
 }
 
 function textoEsgotar(a){
@@ -4693,7 +5189,7 @@ async function renderAuditoria(){
     <div class="cfg-sec"><h3>Benefícios concedidos</h3>
       <p class="aud-nota">Quem entrou pagando menos — ou sem pagar. Filtra a lista abaixo.</p>
       <div id="admFiltrosBen" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px">
-        ${[['todos','Todos'],['desconto','Com desconto'],['cupom','Com cupom'],['ambos','Desconto ou cupom'],['brinde','Brinde']]
+        ${[['todos','Todos'],['desconto','Com desconto'],['cupom','Com cupom'],['ambos','Desconto ou cupom'],['cortesia','Cortesia']]
           .map(([k,r])=>`<button class="fbtn ${benFiltro===k?'on':''}" data-b="${k}" onclick="filtrarBeneficio('${k}',this)">${r}</button>`).join('')}
       </div>
       <div id="admBenLista"></div>
@@ -4753,12 +5249,12 @@ async function renderAuditoria(){
    Lê SÓ o admCache que já está em memória: nenhuma consulta nova ao
    Firestore, nem ao trocar de filtro. Os campos são os que já existem —
    `desconto`/`motivoDesconto` (desconto manual do balcão), `cupom`/
-   `cupomPercentual`/`cupomDesconto` (cupom), `brinde` (gratuita) e
+   `cupomPercentual`/`cupomDesconto` (cupom), cortesia (gratuita) e
    `valorCheio` (quanto teria custado). Nada duplicado. */
 let benFiltro='todos';
 const temDesconto = i => Number(i.desconto||0) > 0;
 const temCupom    = i => !!i.cupom;
-const ehBrinde    = i => i.brinde === true;
+// `ehCortesia` reconhece as duas formas (nova e legada) — ver o helper.
 function filtrarBeneficio(k, btn){
   benFiltro=k;
   const box=el('admFiltrosBen');
@@ -4771,8 +5267,8 @@ function renderBeneficios(){
   const f = benFiltro==='desconto' ? base.filter(temDesconto)
           : benFiltro==='cupom'    ? base.filter(temCupom)
           : benFiltro==='ambos'    ? base.filter(i=>temDesconto(i)||temCupom(i))
-          : benFiltro==='brinde'   ? base.filter(ehBrinde)
-          : base.filter(i=>temDesconto(i)||temCupom(i)||ehBrinde(i));   // "Todos" = todos os beneficiados
+          : benFiltro==='cortesia' ? base.filter(ehCortesia)
+          : base.filter(i=>temDesconto(i)||temCupom(i)||ehCortesia(i));   // "Todos" = todos os beneficiados
 
   if(!f.length){ alvo.innerHTML='<p class="aud-vazio">Nenhuma inscrição neste filtro.</p>'; return; }
   f.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
@@ -4790,7 +5286,7 @@ function renderBeneficios(){
     + f.map(i=>{
       const cheio=Number(i.valorCheio!=null?i.valorCheio:i.valor||0);
       const selos=[
-        ehBrinde(i)    ? '<span class="badge b-ok">BRINDE</span>' : '',
+        ehCortesia(i)  ? '<span class="badge b-ok">CORTESIA</span>' : '',
         temCupom(i)    ? `<span class="badge b-pend">cupom ${esc(i.cupom)}${i.cupomPercentual?' · '+i.cupomPercentual+'%':''}</span>` : '',
         temDesconto(i) ? `<span class="badge b-pend">desconto ${BRL(i.desconto)}</span>` : ''
       ].filter(Boolean).join(' ');
@@ -4798,7 +5294,7 @@ function renderBeneficios(){
       return `<div class="aud-linha" style="align-items:flex-start;flex-wrap:wrap;gap:6px">
         <span style="flex:1;min-width:190px">
           <b style="color:var(--amarelo)">${esc(i.protocolo)||'—'}</b> · ${esc(i.nome)}<br>
-          <small style="color:var(--muted)">${dataBR(i.criadoEm)} · ${esc(st)} · camiseta ${esc(i.camiseta)||'—'}</small>
+          <small style="color:var(--muted)">${dataBR(i.criadoEm)} · ${esc(st)} · ${totalCamisasDe(i)>1?'camisas':'camiseta'} ${esc(camisasTexto(i))}</small>
           ${i.motivoDesconto?`<br><small style="color:var(--muted)">motivo: ${esc(i.motivoDesconto)}</small>`:''}
           <div style="margin-top:5px">${selos}</div>
         </span>
@@ -4862,12 +5358,12 @@ async function baixarPlanilha(){
   try{
     const lista=await DB.list();
     const cab=['Protocolo','Inscrito em','Nome','Tipo doc','Documento','Nascimento','Gênero',
-               'Celular','E-mail','Cidade','Camiseta','Distância','Forma de pagamento','Valor',
+               'Celular','E-mail','Cidade','Camiseta','Qtd camisas','Distância','Forma de pagamento','Valor',
                'Status','Confirmado em','Kit retirado','Retirado em','Retirado por','CPF de quem retirou','Origem','Aceita WhatsApp',
                'Desconto','Motivo do desconto','Valor cheio','Cupom','Desconto do cupom'];
     const linhas=lista.map(i=>[
       i.protocolo, dataBR(i.criadoEm), i.nome, i.docTipo, docDe(i), i.nascimento, i.genero,
-      i.celular, i.email, i.cidade, i.camiseta, i.distancia, i.pagamento,
+      i.celular, i.email, i.cidade, camisasTexto(i,' + '), totalCamisasDe(i), i.distancia, formaPagamentoLabel(i),
       (Number(i.valor)||0).toFixed(2).replace('.',','),
       i.status, i.confirmadoEm?dataBR(i.confirmadoEm):'', i.kitRetirado?'sim':'não',
       i.kitRetiradoEm?dataBR(i.kitRetiradoEm):'',
@@ -5051,7 +5547,7 @@ function listaGrupo(g){
 function msgPara(i){
   const t=(el('wppMsg')?el('wppMsg').value:'')||'';
   return t.replaceAll('{nome}',(i.nome||'').trim().split(' ')[0]||'')
-          .replaceAll('{protocolo}',i.protocolo||'').replaceAll('{tamanho}',i.camiseta||'');
+          .replaceAll('{protocolo}',i.protocolo||'').replaceAll('{tamanho}',camisasTexto(i,', ')).replaceAll('{qtdcamisas}',String(totalCamisasDe(i)));
 }
 function renderWpp(){
   const lista=listaGrupo(wppGrupo);

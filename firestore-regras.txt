@@ -163,15 +163,33 @@ service cloud.firestore {
             && (!('lotesPermitidos' in d()) || (d().lotesPermitidos is list && d().lotesPermitidos.size() <= 10));
       }
 
-      // Consumo e devolução: mexe SÓ no contador, de 1 em 1, e nunca sai da
-      // faixa 0..limite. É isto que impede alguém de mandar "usados: 0" e
-      // reciclar um cupom esgotado, ou "usados: 999999".
+      // CONSUMO E DEVOLUÇÃO. O cupom conta CAMISAS, não inscrições: uma
+      // inscrição com 5 camisas move o contador em 5, não em 1. Por isso o
+      // passo deixou de ser ±1 em 18/09/2026.
+      //
+      // O QUE ESTA REGRA GARANTE: só `usados` muda; continua entre 0 e
+      // `limite`; e o salto cabe num teto de sanidade.
+      //
+      // O QUE ELA NÃO GARANTE — e não tem como: que o salto corresponda a uma
+      // inscrição real. Rules avaliam um documento por vez, e `get()` lê o
+      // estado já commitado; a Rule de `cupons` NÃO enxerga a inscrição
+      // gravada na MESMA transação. Sem login, a proteção aqui é de FORMA.
+      //
+      // O teto de 50 não impede um atacante: sem login ele repete a operação
+      // quantas vezes quiser — como já era possível com o passo de ±1, que
+      // limitava a VELOCIDADE, não a possibilidade. O teto existe para barrar
+      // BUG NOSSO: um número absurdo escrito por engano não corrompe o
+      // contador de um cupom em produção.
+      //
+      // SE `maxCamisasPorDoc` PASSAR DE 50, É ESTA LINHA QUE VAI BLOQUEAR.
       function passoDeContador() {
         return mudou().hasOnly(['usados'])
             && d().usados is number
             && d().usados >= 0
             && d().usados <= antes().limite
-            && (d().usados == antes().usados + 1 || d().usados == antes().usados - 1);
+            && d().usados != antes().usados
+            && d().usados >= antes().usados - 50
+            && d().usados <= antes().usados + 50;
       }
 
       // O site precisa ler o cupom para calcular o desconto e montar a vitrine.
