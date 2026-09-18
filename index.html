@@ -3077,7 +3077,6 @@ function renderTotaisCamisas(){
       : cheio ? 'Você atingiu o limite de '+teto+' camisas nesta inscrição.'
       : 'Você pode selecionar até '+teto+' camisas nesta inscrição.'}</p>`;
 }
-function selTam(t){ if(restanteTam(t)<=0)return; sel.camiseta=t; document.querySelectorAll('#sizeGrid .size').forEach(s=>s.classList.remove('sel')); [...document.querySelectorAll('#sizeGrid .size')].find(s=>s.querySelector('b').textContent===t).classList.add('sel'); }
 function selDist(id){ sel.distId=id; document.querySelectorAll('#pickGrid .pick').forEach(p=>p.classList.toggle('sel',p.dataset.id===id)); }
 function selPay(node){
   sel.pay=node.dataset.pay;
