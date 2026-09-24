@@ -412,6 +412,14 @@ footer .fmeta{margin-top:10px}
 .lotes-nota{text-align:center;color:var(--muted);font-size:12.5px;margin:12px auto 0;max-width:540px}
 .aviso-pag{margin-top:10px;font-size:13px;color:#fff;background:rgba(255,201,60,.12);border:1px solid rgba(255,201,60,.35);border-radius:12px;padding:11px 14px;display:none;line-height:1.5}
 .aviso-pag.on{display:block}
+/* ---- prazo de vendas no herói: discreto enquanto aberto, grande quando fecha ---- */
+.aviso-encerrado{display:none;margin:14px auto 0;max-width:560px;text-align:center;line-height:1.5}
+.aviso-encerrado.aberto{display:block;font-size:13.5px;font-weight:700;color:var(--amarelo);letter-spacing:.2px}
+.aviso-encerrado.fechado{display:block;background:rgba(255,84,112,.10);border:1.5px solid rgba(255,84,112,.45);border-radius:16px;padding:18px 20px}
+.aviso-encerrado.fechado b{display:block;font-family:'Anton';font-style:italic;font-size:26px;letter-spacing:.5px;color:var(--err);text-transform:uppercase}
+.aviso-encerrado.fechado span{display:block;margin-top:6px;font-size:15px;font-weight:700;color:#fff}
+.aviso-encerrado.fechado small{display:block;margin-top:10px;font-size:12.5px;color:var(--muted)}
+.aviso-encerrado.fechado a{color:var(--amarelo);text-decoration:underline}
 
 .est-row{margin-bottom:20px}
 .est-tit{font-family:'Anton';font-style:italic;text-transform:uppercase;font-size:14px;color:var(--amarelo);margin-bottom:8px;letter-spacing:.5px}
@@ -834,21 +842,6 @@ footer .fmeta{margin-top:10px}
 .bkp-rest summary:hover{color:var(--txt)}
 .bkp-status{margin-top:12px;font-size:13px;font-weight:700;line-height:1.5}
 
-/* ---- zona de perigo (auditoria) ---- */
-.zona-perigo{margin-top:22px;background:rgba(255,84,112,.07);border:1px solid rgba(255,84,112,.42);
-  border-radius:16px;padding:20px}
-.zona-perigo h3{font-size:17px;color:var(--err);margin-bottom:10px}
-.zona-perigo p{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px}
-.zona-perigo b{color:var(--txt)}
-.zp-ok{color:var(--ok)!important}
-.zp-ok b{color:var(--ok)}
-.zp-alerta{color:var(--err)!important;font-weight:700}
-.btn-perigo{width:100%;margin-top:8px;background:transparent;border:1.5px solid var(--err);color:var(--err);
-  border-radius:999px;padding:14px;font-family:'Montserrat';font-weight:900;font-size:14px;cursor:pointer;
-  text-transform:uppercase;font-style:italic;letter-spacing:.5px;transition:.18s}
-.btn-perigo:hover{background:var(--err);color:#fff}
-.btn-perigo:disabled{opacity:.6;cursor:default}
-
 .ja-inscrito{margin-top:16px;font-size:13.5px;color:var(--muted);font-weight:600}
 .ja-inscrito a{color:var(--amarelo);text-decoration:underline;text-underline-offset:3px;font-weight:800}
 .ja-inscrito a:hover{color:#fff}
@@ -937,6 +930,7 @@ footer .fmeta{margin-top:10px}
   <div class="hero-cta">
     <button class="btn btn-cta btn-pulso" onclick="abrirInscricao()"><span>Quero me inscrever</span></button>
   </div>
+  <div id="avisoEncerrado" class="aviso-encerrado"></div>
   <div class="lote-tag" id="loteTag"></div>
   <div class="vitrine" id="vitrineCupons" style="display:none"></div>
   <p class="ja-inscrito">Já se inscreveu?
@@ -1474,32 +1468,15 @@ const DB = {
       return JSON.parse(localStorage.getItem(LS_EV)||"[]");
     }catch(e){ return []; }
   },
-  /* Apaga inscrições e auditoria. Não toca em config/settings —
-     quem devolve o estoque ao original é o seedSettings() lá fora. */
-  async zerar(){
-    if(fdb){
-      for(const col of ["inscricoes","eventos"]){
-        // o Firestore limita 500 operações por lote
-        while(true){
-          const s=await fdb.collection(col).limit(400).get();
-          if(s.empty) break;
-          const lote=fdb.batch();
-          s.docs.forEach(d=>lote.delete(d.ref));
-          await lote.commit();
-          if(s.size<400) break;
-        }
-      }
-      return;
-    }
-    localStorage.removeItem(LS_INSC);
-    localStorage.removeItem(LS_EV);
-  },
   async getSettings(){ if(fdb){const d=await fdb.collection("config").doc("settings").get();return d.exists?d.data():null;} return JSON.parse(localStorage.getItem(LS_SET)||"null"); },
 
   /* ATENÇÃO — SUBSTITUI O DOCUMENTO INTEIRO.
-     Só o "Apagar tudo e recomeçar" pode usar, porque ali reescrever tudo
-     é justamente o objetivo. Em qualquer outra gravação isso faria uma aba
-     antiga apagar o que outro aparelho acabou de salvar.
+     ÚNICO uso legítimo: loadSettings() criando o documento pela primeira
+     vez, quando o banco está vazio. (O botão "Apagar tudo e recomeçar", que
+     também usava, foi removido em 24/09/2026 — o produto passa a ter edições,
+     e recomeçar vira arquivar ao lado, nunca apagar.) Em qualquer outra
+     gravação isso faria uma aba antiga apagar o que outro aparelho acabou
+     de salvar.
      Para gravar configuração use patchSettings(); para estoque, moverStatus()
      ou criarComEstoque() — nunca mexa em camiseta por fora deles. */
   async substituirSettings(s){ if(fdb){await fdb.collection("config").doc("settings").set(s);return;} localStorage.setItem(LS_SET,JSON.stringify(s)); },
@@ -2414,7 +2391,8 @@ const precoDe = id => { const l=loteAtual(); if(l) return Number(l.preco); const
 const restanteTam = t => Number((ST&&ST.camiseta&&ST.camiseta[t])||0);
 const totalEstoque = () => CONFIG.camisetas.reduce((s,c)=>s+Math.max(0,restanteTam(c.tam)),0);
 function aplicarEsgotado(){
-  const esg = totalEstoque()<=0;
+  const motivo = motivoEncerramento();
+  const esg = motivo !== null;
   document.querySelectorAll('.btn-cta').forEach(b=>{
     if(b.closest('#ovInscricao')||b.closest('#ovAdmin')) return;
     const s=b.querySelector('span'); if(!s) return;
@@ -2425,6 +2403,32 @@ function aplicarEsgotado(){
     if(esg) b.classList.remove('btn-pulso');
     else if(b.dataset.pulso) b.classList.add('btn-pulso');
   });
+  // Mensagem grande no herói. Um elemento, dois estados: aviso discreto
+  // enquanto aberto com prazo, bloco de encerrado depois.
+  const av=el('avisoEncerrado'); if(!av) return;
+  if(motivo==='prazo'){
+    av.className='aviso-encerrado fechado';
+    av.innerHTML=`<b>Inscrições encerradas</b>
+      <span>As inscrições pelo site terminaram em ${textoPrazo(prazoVendas())}.</span>
+      <small>Já se inscreveu? <a href="#" onclick="abrirConsulta();return false">Consulte sua inscrição</a>.
+      Dúvidas, fale com a organização pelo WhatsApp.</small>`;
+  } else if(motivo==='estoque'){
+    av.className='aviso-encerrado fechado';
+    av.innerHTML=`<b>Inscrições encerradas</b>
+      <span>Todos os kits foram vendidos. Obrigado!</span>
+      <small>Já se inscreveu? <a href="#" onclick="abrirConsulta();return false">Consulte sua inscrição</a>.</small>`;
+  } else {
+    const txt=avisoPrazoAberto();
+    av.className='aviso-encerrado'+(txt?' aberto':'');
+    av.innerHTML=txt?`<span>${txt}</span>`:'';
+  }
+}
+/* O prazo é um instante: se a página ficar aberta, tem de virar sozinha.
+   Custo zero em leituras — só compara Date.now() com o valor já em memória. */
+let timerPrazo=null;
+function ligarRelogioPrazo(){
+  if(timerPrazo) return;
+  timerPrazo=setInterval(()=>{ if(ST) aplicarEsgotado(); }, 60000);
 }
 const linkCartaoAtual = () => { const l=loteAtual(); return (l&&l.link)||CONFIG.linkCartao||"";};
 // devolve o link cujo valor bate exatamente com o que a pessoa deve
@@ -2546,6 +2550,70 @@ function mostrarEstoquePublico(){
   return (ST && ST.mostrarEstoquePublico) === true;
 }
 
+/* ═══════════ PRAZO DE VENDAS (config/settings.vendasAte) ═══════════
+   Epoch em milissegundos — um instante absoluto, igual no celular do
+   participante, no painel e no servidor. Ausente/null = sem prazo.
+
+   O QUE O PRAZO FAZ: bloqueia CRIAR inscrição pelo site público.
+   O QUE ELE NÃO FAZ: não impede confirmar pagamento de quem já tem protocolo,
+   e não fecha o balcão — o organizador continua vendendo presencialmente.
+
+   LIMITE HONESTO: Date.now() é o relógio do aparelho do participante. Quem
+   atrasar o próprio relógio contorna a trava da tela. Isso é aceito porque o
+   pagamento é confirmado por um humano, e a inscrição fora do prazo aparece
+   no painel antes de virar vaga. A trava de servidor (request.time na Rule)
+   exige distinguir balcão de visitante, o que só o login vai permitir. */
+function prazoVendas(){
+  const t = ST && ST.vendasAte;
+  return (typeof t === 'number' && t > 0) ? t : null;
+}
+function vendasEncerradasPorPrazo(){
+  const t = prazoVendas();
+  return t !== null && Date.now() > t;
+}
+/* Motivo ÚNICO do encerramento. null = aberto. O prazo vem antes do estoque
+   porque a mensagem certa para "acabou o prazo" não é "acabaram os kits". */
+function motivoEncerramento(){
+  if(vendasEncerradasPorPrazo()) return 'prazo';
+  if(totalEstoque() <= 0) return 'estoque';
+  return null;
+}
+/* HORÁRIO DE BRASÍLIA, EXPLÍCITO. O Brasil está em UTC−3 e não tem horário
+   de verão desde 2019. `new Date("2026-09-30T23:59")` usaria o fuso do
+   APARELHO de quem preenche — um notebook configurado em outro fuso gravaria
+   o instante errado sem nenhum aviso. Por isso a conta é feita à mão. */
+function epochBrasilia(dataISO, hora){          // "2026-09-30", "23:59"
+  const [a,m,d] = String(dataISO||'').split('-').map(Number);
+  const [hh,mm] = String(hora||'').split(':').map(Number);
+  if(!a || !m || !d || isNaN(hh) || isNaN(mm)) return null;
+  return Date.UTC(a, m-1, d, hh+3, mm, 0, 0);   // +3h leva BRT para UTC
+}
+/* Caminho inverso: epoch -> {data:"2026-09-30", hora:"23:59"} em Brasília,
+   para preencher os campos do painel. */
+function partesBrasilia(t){
+  const p = new Intl.DateTimeFormat('en-CA',{ timeZone:'America/Recife',
+    year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false })
+    .formatToParts(new Date(t)).reduce((o,x)=>(o[x.type]=x.value,o),{});
+  return { data:`${p.year}-${p.month}-${p.day}`, hora:`${p.hour==='24'?'00':p.hour}:${p.minute}` };
+}
+function textoPrazo(t){                          // "30/09/2026 às 23:59"
+  const p = partesBrasilia(t);
+  return `${p.data.slice(8,10)}/${p.data.slice(5,7)}/${p.data.slice(0,4)} às ${p.hora}`;
+}
+/* Frase curta para a vitrine enquanto ainda está aberto. Vira contagem
+   regressiva nos últimos 3 dias — urgência baseada em fato, não em número
+   de estoque. */
+function avisoPrazoAberto(){
+  const t = prazoVendas(); if(t === null) return '';
+  const resta = t - Date.now(); if(resta <= 0) return '';
+  const h = Math.floor(resta/3600000), d = Math.floor(h/24);
+  if(d >= 3) return 'Inscrições até '+textoPrazo(t);
+  if(d >= 1) return 'Últimos dias: inscrições até '+textoPrazo(t)+' — faltam '+d+(d>1?' dias':' dia');
+  if(h >= 1) return 'Inscrições encerram hoje às '+textoPrazo(t).slice(-5)+' — faltam '+h+'h';
+  const min = Math.max(1, Math.floor(resta/60000));
+  return 'Inscrições encerram em '+min+' min';
+}
+
 /* Formas em que o MESMO documento pode ter sido gravado, para consulta
    por igualdade no servidor. O campo guarda o texto como foi digitado, e
    as máscaras rodam a cada tecla — então na prática CPF é sempre
@@ -2655,6 +2723,7 @@ function renderPagina(){
   el('pixChave').textContent=c.pix.chave;
 
   aplicarEsgotado();
+  ligarRelogioPrazo();
 }
 
 /* ===================== FOTOS DA 1ª EDIÇÃO (miniaturas + zoom) ===================== */
@@ -3031,7 +3100,9 @@ function selTam(t){
 
 function abrirInscricao(distId){
   if(!ST){ toast("Só um instante, carregando..."); return; }
-  if(totalEstoque()<=0){ toast("As inscrições estão encerradas — todos os kits foram vendidos."); return; }
+  const fechado=motivoEncerramento();
+  if(fechado==='prazo'){ toast("As inscrições pelo site encerraram em "+textoPrazo(prazoVendas())+"."); aplicarEsgotado(); return; }
+  if(fechado==='estoque'){ toast("As inscrições estão encerradas — todos os kits foram vendidos."); return; }
   DB.evento("abriu_inscricao");
   sel.distId=distId||CONFIG.distancias[0].id; sel.camiseta=null; sel.camisas={};
   el('pickGrid').innerHTML=CONFIG.distancias.map(d=>{
@@ -3321,6 +3392,12 @@ function telValido(v){ const d=soDigitos(v); return d.length===10||d.length===11
 function protocolo(){ return "EVR-"+Date.now().toString(36).toUpperCase().slice(-5)+Math.floor(Math.random()*90+10); }
 
 async function gerarInscricao(){
+  // Trava final do prazo: quem abriu o formulário às 23:58 e clicou às 00:02
+  // não cria inscrição. A tela é conveniência; sem login, é a trava que existe.
+  if(vendasEncerradasPorPrazo()){
+    toast("As inscrições pelo site encerraram em "+textoPrazo(prazoVendas())+".");
+    fecharOverlay('ovInscricao'); aplicarEsgotado(); return;
+  }
   // Confere a composição inteira. A tela é conveniência; a validação
   // definitiva é a transação da camada de dados.
   if(selTotal()<1){ toast("Escolha pelo menos uma camisa"); irPasso(1); return; }
@@ -3938,6 +4015,23 @@ function renderConfig(){
         (ex: <b>6 disp.</b>). Desativado, o participante vê só <b>Disponível</b> ou <b>Indisponível</b>.
         O balcão mostra o número exato sempre, dos dois jeitos.
       </p>
+      <div class="mini-field" style="max-width:420px;margin-top:16px">
+        <label>Encerrar inscrições pelo site em (horário de Brasília)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input type="date" id="cfg_prazoData" value="${prazoVendas()!==null?partesBrasilia(prazoVendas()).data:''}" style="flex:1;min-width:150px">
+          <input type="time" id="cfg_prazoHora" value="${prazoVendas()!==null?partesBrasilia(prazoVendas()).hora:''}" style="width:110px">
+          ${prazoVendas()!==null?`<button type="button" class="mini leve" onclick="document.getElementById('cfg_prazoData').value='';document.getElementById('cfg_prazoHora').value=''">limpar</button>`:''}
+        </div>
+      </div>
+      <p style="color:var(--muted);font-size:12px;margin:6px 0 0">
+        ${prazoVendas()!==null
+          ? (vendasEncerradasPorPrazo()
+              ? `<b style="color:var(--err)">Encerrado</b> desde ${textoPrazo(prazoVendas())}. O site mostra "Inscrições encerradas".`
+              : `Ativo: o site fecha sozinho em <b>${textoPrazo(prazoVendas())}</b>.`)
+          : 'Sem prazo: as inscrições ficam abertas enquanto houver estoque.'}
+        Vale só para o site — <b>o balcão continua vendendo</b>, e quem já tem inscrição
+        pendente continua podendo pagar. Deixe em branco para não ter prazo.
+      </p>
       <div class="mini-field" style="max-width:340px;margin-top:16px">
         <label>Máximo de camisas por documento</label>
         <input type="number" min="1" max="50" step="1" id="cfg_maxCamisas" value="${maxCamisasPorDoc()}">
@@ -4033,6 +4127,23 @@ async function salvarConfig(){
      gravamos `false` só para o campo existir. */
   const me=el('cfg_mostrarEstoque');
   if(me && me.checked!==mostrarEstoquePublico()) patch.mostrarEstoquePublico=me.checked;
+
+  /* PRAZO DE VENDAS — data+hora de Brasília viram UM epoch. Só entra no patch
+     se mudou. Limpar um prazo que existia grava null (o helper trata null como
+     "sem prazo"); nunca gravamos null num campo que já estava ausente. Data sem
+     hora (ou o contrário) é entrada incompleta: avisa e não grava. */
+  const pd=el('cfg_prazoData'), ph=el('cfg_prazoHora');
+  if(pd && ph){
+    const temData=!!pd.value, temHora=!!ph.value;
+    if(temData!==temHora){ toast("Prazo incompleto: preencha data E hora, ou deixe os dois em branco"); pd.focus(); return; }
+    const novo = temData ? epochBrasilia(pd.value, ph.value) : null;
+    const atual = prazoVendas();
+    if(temData && novo===null){ toast("Data ou hora do prazo inválida"); pd.focus(); return; }
+    if(novo!==atual){
+      if(novo===null){ if(atual!==null) patch.vendasAte=null; }
+      else patch.vendasAte=novo;
+    }
+  }
 
   if(!Object.keys(patch).length){ toast("Nada mudou"); return; }
   await DB.patchSettings(patch);
@@ -5255,17 +5366,6 @@ async function renderAuditoria(){
         <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="el('bkpArquivo').click()">Escolher arquivo de backup</button>
         <div id="bkpStatus"></div>
       </details>
-    </div>
-
-    <div class="zona-perigo">
-      <h3>Zerar para começar do zero</h3>
-      <p>Apaga <b>todas as inscrições</b>, devolve o <b>estoque de camisetas</b> ao valor original,
-         zera o <b>caixa</b> e limpa esta <b>auditoria</b>.</p>
-      <p class="zp-ok">Preços, lotes, links de pagamento, kit e chave PIX <b>não são alterados</b>.</p>
-      <p class="zp-alerta">Isto não tem volta. Use só antes de abrir as inscrições para valer.</p>
-      <p class="bkp-txt">Antes de apagar, o site baixa sozinho um backup do que está no ar —
-         se você clicar aqui por engano, dá para restaurar pelo bloco de Backup acima.</p>
-      <button class="btn-perigo" onclick="zerarTudo()">Apagar tudo e recomeçar</button>
     </div>`;
 
   renderBeneficios();
@@ -5450,41 +5550,6 @@ async function restaurarBackup(input){
   await carregarAdmin(); await renderAuditoria();
   aviso(`Restauradas ${ok} inscrições.`+(erro?` ${erro} falharam — veja o console (F12).`:''), erro?'var(--alerta)':'var(--ok)');
   toast(erro?`Restaurado com ${erro} falha(s)`:`Backup restaurado ✓`);
-}
-
-/* ═══════════════ ZERAR PARA ENTREGA ═══════════════
-   Some com o que foi teste e devolve o site ao estado de estreia,
-   sem tocar na configuração que o Wilson já deixou pronta. */
-async function zerarTudo(){
-  const senha = prompt(
-    'APAGAR TUDO E RECOMEÇAR\n\n'+
-    'Serão apagadas TODAS as inscrições (site e balcão),\n'+
-    'o estoque volta ao original, o caixa zera e a auditoria some.\n\n'+
-    'Preços, lotes, links de pagamento e kit continuam como estão.\n\n'+
-    'Não tem como desfazer.\n\n'+
-    'Digite a senha do painel para confirmar:');
-  if(senha===null) return;
-  if(senha!==CONFIG.adminSenha){ toast('Senha incorreta — nada foi apagado'); return; }
-  if(!confirm('Última confirmação.\n\nApagar tudo agora?')) return;
-
-  const btn=document.querySelector('.btn-perigo');
-  if(btn){ btn.disabled=true; btn.textContent='Salvando backup...'; }
-  try{
-    // Rede de segurança: baixa o backup ANTES de apagar. Se alguém
-    // clicar aqui por engano com inscrições reais, dá pra restaurar.
-    await baixarBackup();
-    if(btn) btn.textContent='Apagando...';
-    await DB.zerar();
-    ST = seedSettings();          // estoque, kit e seleção de lote voltam ao CONFIG
-    await DB.substituirSettings(ST);   // único lugar onde reescrever tudo é o objetivo
-    admCache=[]; admLimite=20; balUltima=null;
-    renderAdmin(); renderPagina(); renderBalcao(); await renderAuditoria();
-    toast('Site zerado ✓ — o backup do que foi apagado está na sua pasta Downloads');
-  }catch(e){
-    console.error(e);
-    toast('Não consegui apagar tudo. Veja o console (F12).');
-    if(btn){ btn.disabled=false; btn.textContent='Apagar tudo e recomeçar'; }
-  }
 }
 
 async function copiarAuditoria(){
