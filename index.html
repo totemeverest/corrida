@@ -1162,6 +1162,13 @@ footer .fmeta{margin-top:10px}
       <p style="color:var(--muted);font-size:12px;margin-top:18px;line-height:1.5">A sessão fica salva neste navegador. Use <b>Sair</b> dentro do painel em computador compartilhado.</p>
     </div>
 
+    <div id="admSemAcesso" class="admin-login" style="display:none">
+      <p style="font-family:'Anton';font-style:italic;font-size:22px;color:var(--amarelo);text-transform:uppercase;letter-spacing:.5px">Sem acesso ao painel</p>
+      <p style="color:var(--txt);font-size:14px;margin-top:10px;line-height:1.6">Você entrou como <b id="admSemAcessoQuem"></b>, mas esta conta não está autorizada.</p>
+      <p style="color:var(--muted);font-size:13px;margin-top:10px;line-height:1.6">Peça a um administrador para liberar o seu acesso, ou entre com a conta certa.</p>
+      <button class="btn btn-ghost" style="width:100%;margin-top:18px" onclick="sairAdmin()">Sair e trocar de conta</button>
+    </div>
+
     <div id="admPanel" style="display:none">
       <div class="adm-user">
         <span id="admQuem"></span>
@@ -3534,12 +3541,41 @@ let admFiltro="todos", admCache=[], admLimite=20;
    administrador pelo painel, sem tocar em código. */
 function usuarioAtual(){ return fbAuth ? fbAuth.currentUser : null; }
 
-/* ETAPA 1A: estar autenticado já abre o painel.
-   ETAPA 1B (próxima): passa a exigir também admins/{uid}. A assinatura é
-   async de propósito — essa leitura entra aqui sem mudar quem chama. */
+/* ETAPA 1B: estar autenticado NÃO basta. Tem de existir admins/{uid} com
+   `ativo:true` e `role:'admin'`. Qualquer outra conta Google entra no site
+   como visitante autenticado e não vê nada do painel.
+
+   LEITURA: UMA, direta por ID do documento (`doc(uid).get()`). Nunca
+   `collection('admins').get()` — listar a coleção custaria N leituras e
+   exporia quem são os administradores.
+
+   CACHE: vale enquanto for o MESMO uid. Sem polling, sem listener em tempo
+   real, sem reler a cada render — `renderEstadoAdmin()` roda várias vezes por
+   sessão e não pode pagar uma leitura em cada uma. O cache é zerado quando a
+   sessão muda (login de outra conta, logout). */
+let admPermissao = { uid:null, ok:false };      // memória da sessão atual
+function limparPermissaoAdmin(){ admPermissao = { uid:null, ok:false }; }
+
 async function souAdmin(){
   if(MODO_DEMO) return true;            // sem Firebase não há login: painel local
-  return !!usuarioAtual();
+  const u = usuarioAtual();
+  if(!u){ limparPermissaoAdmin(); return false; }
+  if(admPermissao.uid === u.uid) return admPermissao.ok;   // já sei, não releio
+  if(!fdb) return false;
+  try{
+    const d = await fdb.collection('admins').doc(u.uid).get();
+    const dados = d.exists ? d.data() : null;
+    const ok = !!dados && dados.ativo === true && dados.role === 'admin';
+    if(!ok && dados) console.warn('admins/'+u.uid+' existe mas não autoriza (ativo:'+dados.ativo+', role:'+dados.role+')');
+    admPermissao = { uid:u.uid, ok };    // só guardo o que li de verdade
+    return ok;
+  }catch(e){
+    /* Falha de rede ou permissão: NÃO cacheio. Cachear "false" aqui trancaria
+       o organizador para fora até recarregar a página por causa de uma queda
+       momentânea de conexão. */
+    console.warn('Não consegui verificar admins/'+u.uid+':', e && e.code || e);
+    return false;
+  }
 }
 
 function mostrarErroLogin(e){
@@ -3557,13 +3593,24 @@ function mostrarErroLogin(e){
   p.textContent = texto; p.style.display = texto ? 'block' : 'none';
 }
 
-/* Desenha o overlay conforme a sessão: tela de login ou painel. É chamada ao
-   abrir o overlay e sempre que a sessão muda (login concluído, logout). */
+/* Desenha o overlay conforme a sessão. TRÊS estados, não dois:
+     sem sessão            → tela de login
+     sessão sem permissão  → "sem acesso" (a pessoa entrou, mas não é admin)
+     admin                 → painel
+   O estado do meio existe para não parecer que o login falhou: ele funcionou,
+   a conta é que não está autorizada. */
 let admCarregandoPara = null;      // uid cuja carga já foi disparada; evita carregar 2x
 async function renderEstadoAdmin(){
   const ok = await souAdmin();
-  el('admLogin').style.display = ok ? 'none' : 'block';
-  el('admPanel').style.display = ok ? 'block' : 'none';
+  const logado = !!usuarioAtual();
+  const semAcesso = !ok && logado && !MODO_DEMO;
+  el('admLogin').style.display    = (!ok && !semAcesso) ? 'block' : 'none';
+  el('admSemAcesso').style.display= semAcesso ? 'block' : 'none';
+  el('admPanel').style.display    = ok ? 'block' : 'none';
+  if(semAcesso){
+    const u=usuarioAtual();
+    el('admSemAcessoQuem').textContent = u ? (u.email || u.displayName || '') : '';
+  }
   if(!ok){ admCarregandoPara=null; return; }
   const u = usuarioAtual();
   el('admQuem').innerHTML = u
@@ -3603,6 +3650,7 @@ async function sairAdmin(){
   /* Limpa o que estava em memória ANTES de sair: em computador compartilhado,
      a próxima pessoa não pode achar a lista de inscritos no cache. */
   admCache=[]; admLimite=20; balUltima=null; admCarregandoPara=null;
+  limparPermissaoAdmin();       // a próxima conta é consultada do zero
   ['admInscr','admBalcao','admConfig','admCupons','admWpp','admAud','admDivulg'].forEach(id=>{ const x=el(id); if(x) x.innerHTML=''; });
   try{ if(fbAuth) await fbAuth.signOut(); }catch(e){ console.warn(e); }
   renderEstadoAdmin();
@@ -3612,7 +3660,10 @@ async function sairAdmin(){
    recarregar a página mantém a sessão; Sair encerra. */
 function ligarAuthPainel(){
   if(!fbAuth) return;
-  fbAuth.onAuthStateChanged(()=>{
+  fbAuth.onAuthStateChanged(u=>{
+    /* Sessão mudou: a permissão em cache não vale mais. Se a conta for outra,
+       souAdmin() consulta admins/{novo uid} — uma leitura, só aqui. */
+    if(!u || u.uid !== admPermissao.uid) limparPermissaoAdmin();
     // Só redesenha se o painel estiver aberto — a vitrine não tem nada a ver com isso.
     if(el('ovAdmin') && el('ovAdmin').classList.contains('open')) renderEstadoAdmin();
   });
