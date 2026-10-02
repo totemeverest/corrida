@@ -207,6 +207,18 @@ service cloud.firestore {
       allow delete: if resource.data.usados == 0;
     }
 
+    // ---------------- ADMINISTRADORES DO PAINEL ----------------
+    // O painel lê admins/{uid} para saber se a conta Google logada é
+    // administradora. Cada usuário logado lê SÓ o próprio documento:
+    // ninguém lista a coleção (não dá para descobrir quem são os admins)
+    // e ninguém escreve por aqui — admin novo é criado à mão no Console.
+    //
+    // Sem este bloco a leitura cai no "TUDO O MAIS: fechado" abaixo e o
+    // painel nega acesso a todo mundo, inclusive ao organizador.
+    match /admins/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+    }
+
     // ---------------- TUDO O MAIS: fechado ----------------
     match /{document=**} {
       allow read, write: if false;

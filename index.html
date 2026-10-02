@@ -1163,10 +1163,11 @@ footer .fmeta{margin-top:10px}
     </div>
 
     <div id="admSemAcesso" class="admin-login" style="display:none">
-      <p style="font-family:'Anton';font-style:italic;font-size:22px;color:var(--amarelo);text-transform:uppercase;letter-spacing:.5px">Sem acesso ao painel</p>
-      <p style="color:var(--txt);font-size:14px;margin-top:10px;line-height:1.6">Você entrou como <b id="admSemAcessoQuem"></b>, mas esta conta não está autorizada.</p>
-      <p style="color:var(--muted);font-size:13px;margin-top:10px;line-height:1.6">Peça a um administrador para liberar o seu acesso, ou entre com a conta certa.</p>
-      <button class="btn btn-ghost" style="width:100%;margin-top:18px" onclick="sairAdmin()">Sair e trocar de conta</button>
+      <p id="admSemAcessoTit" style="font-family:'Anton';font-style:italic;font-size:22px;color:var(--amarelo);text-transform:uppercase;letter-spacing:.5px">Sem acesso ao painel</p>
+      <p style="color:var(--txt);font-size:14px;margin-top:10px;line-height:1.6">Você entrou como <b id="admSemAcessoQuem"></b><span id="admSemAcessoMsg">, mas esta conta não está autorizada.</span></p>
+      <p id="admSemAcessoDica" style="color:var(--muted);font-size:13px;margin-top:10px;line-height:1.6">Peça a um administrador para liberar o seu acesso, ou entre com a conta certa.</p>
+      <button id="admTentarDeNovo" class="btn btn-cta" style="width:100%;margin-top:18px;display:none" onclick="tentarVerificarAcesso()"><span>Tentar de novo</span></button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:12px" onclick="sairAdmin()">Sair e trocar de conta</button>
     </div>
 
     <div id="admPanel" style="display:none">
@@ -3554,7 +3555,12 @@ function usuarioAtual(){ return fbAuth ? fbAuth.currentUser : null; }
    sessão e não pode pagar uma leitura em cada uma. O cache é zerado quando a
    sessão muda (login de outra conta, logout). */
 let admPermissao = { uid:null, ok:false };      // memória da sessão atual
-function limparPermissaoAdmin(){ admPermissao = { uid:null, ok:false }; }
+/* Código do último ERRO de verificação (ex.: 'permission-denied'), ou null.
+   Erro NÃO é o mesmo que "não autorizado": significa que não deu para saber.
+   A tela mostra coisas diferentes nos dois casos — confundir os dois faz o
+   organizador achar que perdeu o acesso quando o problema é configuração. */
+let admPermissaoErro = null;
+function limparPermissaoAdmin(){ admPermissao = { uid:null, ok:false }; admPermissaoErro = null; }
 
 async function souAdmin(){
   if(MODO_DEMO) return true;            // sem Firebase não há login: painel local
@@ -3562,6 +3568,7 @@ async function souAdmin(){
   if(!u){ limparPermissaoAdmin(); return false; }
   if(admPermissao.uid === u.uid) return admPermissao.ok;   // já sei, não releio
   if(!fdb) return false;
+  admPermissaoErro = null;
   try{
     const d = await fdb.collection('admins').doc(u.uid).get();
     const dados = d.exists ? d.data() : null;
@@ -3573,7 +3580,8 @@ async function souAdmin(){
     /* Falha de rede ou permissão: NÃO cacheio. Cachear "false" aqui trancaria
        o organizador para fora até recarregar a página por causa de uma queda
        momentânea de conexão. */
-    console.warn('Não consegui verificar admins/'+u.uid+':', e && e.code || e);
+    admPermissaoErro = (e && e.code) || 'erro-desconhecido';
+    console.warn('Não consegui verificar admins/'+u.uid+':', admPermissaoErro);
     return false;
   }
 }
@@ -3610,6 +3618,20 @@ async function renderEstadoAdmin(){
   if(semAcesso){
     const u=usuarioAtual();
     el('admSemAcessoQuem').textContent = u ? (u.email || u.displayName || '') : '';
+    /* Dois casos com cara parecida e significado oposto:
+       - admPermissaoErro preenchido → NÃO deu para verificar. A conta pode
+         muito bem ser admin; o problema é conexão ou configuração.
+       - admPermissaoErro null       → verificou, e a conta não é admin. */
+    const erro = admPermissaoErro;
+    el('admSemAcessoTit').textContent = erro ? 'Não consegui verificar seu acesso' : 'Sem acesso ao painel';
+    el('admSemAcessoMsg').textContent = erro ? ', mas a verificação falhou (código: '+erro+').'
+                                             : ', mas esta conta não está autorizada.';
+    el('admSemAcessoDica').textContent = erro==='permission-denied'
+        ? 'As regras do banco ainda não permitem esta verificação. Isso é configuração do Firebase, não a sua conta — avise o suporte técnico com o código acima.'
+      : erro
+        ? 'Pode ser a conexão. Tente de novo; se continuar, avise o suporte técnico com o código acima.'
+        : 'Peça a um administrador para liberar o seu acesso, ou entre com a conta certa.';
+    el('admTentarDeNovo').style.display = erro ? 'block' : 'none';
   }
   if(!ok){ admCarregandoPara=null; return; }
   const u = usuarioAtual();
@@ -3620,6 +3642,13 @@ async function renderEstadoAdmin(){
      AQUI, depois de souAdmin() dizer sim — nunca na carga da página. */
   const chave = u ? u.uid : 'demo';
   if(admCarregandoPara !== chave){ admCarregandoPara = chave; admAba('inscr'); carregarAdmin(); }
+}
+
+/* "Tentar de novo" depois de um ERRO de verificação. Erro nunca é cacheado,
+   então basta redesenhar: souAdmin() faz UMA leitura nova de admins/{uid}. */
+async function tentarVerificarAcesso(){
+  const b=el('admTentarDeNovo'); if(b) b.disabled=true;
+  try{ await renderEstadoAdmin(); } finally { if(b) b.disabled=false; }
 }
 
 function abrirAdmin(){
