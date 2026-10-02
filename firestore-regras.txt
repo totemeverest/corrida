@@ -2,6 +2,7 @@ rules_version = '2';
 
 // ===================================================================
 //  REGRAS DO FIRESTORE — 2ª Corrida Everest
+//  Fase 1D: painel exige login Google + admins/{uid} (ativo, role admin)
 //  Projeto: site-corrida  (site-corrida-8e4df)
 //
 //  Cole em: Firebase → Firestore Database → aba "Regras" → PUBLICAR
@@ -10,9 +11,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // O site não tem login: quem acessa é sempre anônimo.
-    // Estas regras não separam admin de visitante — elas limitam
-    // o ESTRAGO que alguém pode causar.
+    // DOIS TIPOS DE QUEM ACESSA:
+    //   · visitante (anônimo): vê a vitrine, se inscreve, consulta a própria
+    //     inscrição, consome cupom e registra eventos de funil. Nada mais.
+    //   · organizador: logado com Google E com admins/{uid} ativo e role
+    //     'admin'. É o único que confirma, cancela, mexe em estoque, preço,
+    //     cupom e lê a lista completa.
+    // A decisão passa SEMPRE por ehAdmin(). Não escreva `request.auth != null`
+    // solto em outro lugar: estar logado NÃO é ser organizador.
 
     // Limita o tamanho de um campo de texto, se ele existir.
     function textoAte(campo, max) {
@@ -53,49 +59,110 @@ service cloud.firestore {
              && textoAte('retiradoPorCpf', 14);
     }
 
+    // ---------------- QUEM É ORGANIZADOR ----------------
+    // As MESMAS três condições que o painel confere em souAdmin() no
+    // index.html. Se as duas divergirem, o painel abre e a gravação falha.
+    // Custa 1 leitura de admins/{uid} por gravação do painel. Para o
+    // visitante não custa nada: sem login, para no primeiro teste.
+    function adminDoc() {
+      return /databases/$(database)/documents/admins/$(request.auth.uid);
+    }
+    function ehAdmin() {
+      return request.auth != null
+          && exists(adminDoc())
+          && get(adminDoc()).data.get('ativo', false) == true
+          && get(adminDoc()).data.get('role', '') == 'admin';
+    }
+
+    // ---------------- INSCRIÇÃO PELO SITE (visitante) ----------------
+    // A forma EXATA que gerarInscricao() grava. Sem esta checagem, um
+    // visitante criaria inscrição já 'confirmado', com estoque baixado,
+    // cortesia ou kit entregue — vaga sem pagar, sem passar pelo organizador.
+    //
+    // ATENÇÃO: campo novo em gerarInscricao() tem de entrar no hasOnly
+    // abaixo NA MESMA PUBLICAÇÃO, senão TODA inscrição pelo site é recusada.
+    // O teste SKILL-CORRIDA/testes/regras.js cruza as duas listas.
+    function criacaoPublica() {
+      let d = request.resource.data;
+      let s = get(/databases/$(database)/documents/config/settings).data;
+      return d.keys().hasOnly([
+               'protocolo','status','distanciaId','distancia',
+               'camiseta','camisas','totalCamisas',
+               'nome','docTipo','documento','cpf','nascimento','genero',
+               'celular','email','cidade',
+               'pagamento','valor','evento','origem','criadoEm','aceitaWpp',
+               'estoqueBaixado',
+               'valorCheio','cupom','cupomPercentual','cupomDesconto','cupomConsumido'])
+          && d.status == 'pendente'
+          && d.origem == 'site'
+          && d.estoqueBaixado == false
+          && d.pagamento in ['PIX', 'Dinheiro', 'Cartão']
+          && d.valor is number && d.valor >= 0
+          // camisas: só tamanhos que existem, e o total bate com a soma —
+          // senão {G:50} com totalCamisas:1 tiraria 50 G do estoque na
+          // confirmação. E o total respeita o limite comercial do painel.
+          && d.camisas is map
+          && d.camisas.keys().hasOnly(['PP','P','M','G','GG'])
+          && d.totalCamisas is number
+          && d.totalCamisas >= 1
+          && d.totalCamisas == d.camisas.get('PP',0) + d.camisas.get('P',0)
+                             + d.camisas.get('M',0)  + d.camisas.get('G',0)
+                             + d.camisas.get('GG',0)
+          && d.totalCamisas <= s.get('maxCamisasPorDoc', 1)
+          // Prazo com o relógio DO SERVIDOR — atrasar o relógio do celular
+          // não adianta. O balcão não passa por aqui (vende após o prazo).
+          && (!('vendasAte' in s) || s.vendasAte == null
+              || request.time.toMillis() < s.vendasAte);
+    }
+
     // ---------------- INSCRIÇÕES ----------------
     match /inscricoes/{id} {
 
-      allow read: if true;
+      // Ler UMA inscrição pelo ID: só o painel (transações). Nenhum fluxo
+      // público lê por ID.
+      allow get: if ehAdmin();
 
-      // Qualquer visitante pode se inscrever.
-      allow create: if camposDeInscricao();
+      // Consulta pública e checagem de CPF duplicado usam where(...) com
+      // limit(5) e limit(10). Lista sem limite = painel, backup, planilha.
+      // LIMITE CONHECIDO: o limit não impede paginar com cursor — ver
+      // SKILL-CORRIDA/AUDITORIA-RULES-1D.md §F.2.
+      allow list: if ehAdmin()
+                  || (request.query.limit != null && request.query.limit <= 10);
 
-      // Confirmar pagamento, entregar kit, cancelar.
-      allow update: if camposDeInscricao();
+      // Visitante: só na forma do site e dentro do prazo.
+      // Organizador: qualquer forma (balcão, cortesia, restaurar backup).
+      allow create: if camposDeInscricao() && (ehAdmin() || criacaoPublica());
 
-      // Liberado por causa do botão "Apagar tudo e recomeçar" da aba
-      // Auditoria, usado para limpar os testes antes da entrega.
-      //
-      // ATENÇÃO: como o site não tem login, isto vale para qualquer
-      // visitante, não só para o organizador. O botão pede senha, mas
-      // a senha é conferida no navegador — não aqui.
-      //
-      // DEPOIS DE ZERAR E ABRIR AS INSCRIÇÕES DE VERDADE:
-      // troque a linha abaixo para  allow delete: if false;  e publique
-      // de novo. Aí ninguém apaga o que já foi vendido, nem por engano.
-      allow delete: if true;
+      // Confirmar, cancelar, reabrir, kit, troca de tamanho, cupom: painel.
+      allow update: if ehAdmin() && camposDeInscricao();
+
+      // PERMANENTE. Nenhum código apaga inscrição desde a remoção do
+      // "Apagar tudo e recomeçar" (24/09/2026). Inscrição é histórico.
+      allow delete: if false;
     }
 
     // ---------------- CONFIGURAÇÕES (preços, lotes, estoque) ----------------
     match /config/settings {
 
-      // O site precisa ler os preços antes de qualquer coisa.
+      // A vitrine precisa ler preços, estoque e prazo antes de tudo.
       allow read: if true;
 
-      // Só aceita se continuar tendo cara de settings válido —
-      // evita que uma escrita torta derrube a página inteira.
-      allow write: if request.resource.data.keys().hasAll(['versao','camiseta','lotes'])
+      // Só o painel grava. O site público nunca escreve aqui.
+      // A forma continua exigida: evita que uma gravação torta derrube a página.
+      allow create, update: if ehAdmin()
+                   && request.resource.data.keys().hasAll(['versao','camiseta','lotes'])
                    && request.resource.data.keys().size() <= 20;
+      allow delete: if false;
     }
 
     // ---------------- AUDITORIA (contadores de uso) ----------------
     match /eventos/{id} {
-      allow read:   if true;
-      allow create: if request.resource.data.keys().size() <= 4
-                    && textoAte('tipo', 40);
-      allow update: if false;   // histórico não se reescreve
-      allow delete: if true;    // mas o botão de zerar limpa
+      allow read:   if ehAdmin();                        // só a auditoria lê
+      allow create: if request.resource.data.keys().hasOnly(['tipo','em'])
+                    && textoAte('tipo', 40)
+                    && request.resource.data.em is number;  // DB.evento grava {tipo, em}
+      allow update: if false;                            // histórico não se reescreve
+      allow delete: if false;                            // PERMANENTE
     }
 
     // ---------------- CUPONS (desconto percentual) ----------------
@@ -103,16 +170,15 @@ service cloud.firestore {
     // Sem este bloco a coleção cai no catch-all abaixo e NENHUM cupom
     // funciona — nem o painel, nem a inscrição.
     //
-    // LIMITE CONHECIDO E ACEITO: o site não tem login. Nenhum firebase-auth
-    // é carregado, então request.auth é SEMPRE null e estas regras NÃO
-    // sabem quem é o organizador. O que elas garantem é a FORMA da escrita:
-    // ninguém inventa campo, ninguém mexe no percentual de um cupom que já
-    // existe, e ninguém altera o contador de qualquer jeito.
+    // Criar, editar e apagar cupom: só o organizador (ehAdmin()).
+    // O CONTADOR `usados` continua tendo um caminho público, porque o
+    // visitante consome o cupom ao se inscrever — mas SÓ PARA CIMA. Devolver
+    // uso (cancelar, trocar ou remover cupom de uma inscrição) é do painel.
+    // Isso fecha o "reciclar cupom esgotado" pelo console do navegador.
     //
-    // O que continua possível para um visitante: criar um cupom novo com
-    // forma válida, ou ligar/desligar um existente. Isso foi avaliado e
-    // aceito para esta edição do evento — a confirmação de pagamento é
-    // manual, então um cupom forjado aparece no painel antes de virar vaga.
+    // LIMITE CONHECIDO: um visitante ainda consegue SOMAR usos sem se
+    // inscrever (queimar o cupom). Esta Rule não enxerga a inscrição da
+    // mesma transação — ver AUDITORIA-RULES-1D.md §F.5.
     match /cupons/{codigo} {
 
       function d()     { return request.resource.data; }
@@ -193,18 +259,23 @@ service cloud.firestore {
       }
 
       // O site precisa ler o cupom para calcular o desconto e montar a vitrine.
+      // PENDENTE (Publicação 2): restringir a lista a mostrarNoSite == true —
+      // hoje a vitrine baixa também os cupons ocultos. Exige mudar o código
+      // da vitrine ANTES desta Rule, senão a vitrine quebra.
       allow read: if true;
 
-      // Cupom nasce sempre zerado.
-      allow create: if formaDeCupom() && d().usados == 0;
+      // Cupom nasce sempre zerado, e só pelo painel.
+      allow create: if ehAdmin() && formaDeCupom() && d().usados == 0;
 
-      // Ou o contador anda (±1), ou é uma edição do painel — nunca as duas
-      // coisas na mesma gravação. `usados` só muda pelo primeiro caminho.
-      allow update: if passoDeContador() || edicaoDeCupom();
+      // Visitante: o contador só SOBE (consumo ao se inscrever).
+      // Organizador: contador para cima ou para baixo, ou edição do cupom —
+      // nunca as duas coisas na mesma gravação.
+      allow update: if (passoDeContador() && d().usados > antes().usados)
+                    || (ehAdmin() && (passoDeContador() || edicaoDeCupom()));
 
-      // Some só o que nunca foi usado: uma inscrição no histórico não pode
-      // ficar apontando para um cupom que deixou de existir.
-      allow delete: if resource.data.usados == 0;
+      // Some só o que nunca foi usado, e só pelo painel: uma inscrição no
+      // histórico não pode apontar para um cupom que deixou de existir.
+      allow delete: if ehAdmin() && resource.data.usados == 0;
     }
 
     // ---------------- ADMINISTRADORES DO PAINEL ----------------
