@@ -1183,6 +1183,7 @@ footer .fmeta{margin-top:10px}
         <button class="adm-tab" id="tabWpp" onclick="admAba('wpp')">WhatsApp</button>
         <button class="adm-tab" id="tabAud" onclick="admAba('aud')">Auditoria</button>
         <button class="adm-tab" id="tabDivulg" onclick="admAba('divulg')">Divulgação (QR)</button>
+        <button class="adm-tab" id="tabRelat" onclick="admAba('relat')">Relatórios</button>
       </div>
 
       <div id="admInscr">
@@ -1219,6 +1220,7 @@ footer .fmeta{margin-top:10px}
       <div id="admWpp" style="display:none"></div>
       <div id="admAud" style="display:none"></div>
       <div id="admDivulg" style="display:none"></div>
+      <div id="admRelat" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -3680,7 +3682,7 @@ async function sairAdmin(){
      a próxima pessoa não pode achar a lista de inscritos no cache. */
   admCache=[]; admLimite=20; balUltima=null; admCarregandoPara=null;
   limparPermissaoAdmin();       // a próxima conta é consultada do zero
-  ['admInscr','admBalcao','admConfig','admCupons','admWpp','admAud','admDivulg'].forEach(id=>{ const x=el(id); if(x) x.innerHTML=''; });
+  ['admInscr','admBalcao','admConfig','admCupons','admWpp','admAud','admDivulg','admRelat'].forEach(id=>{ const x=el(id); if(x) x.innerHTML=''; });
   try{ if(fbAuth) await fbAuth.signOut(); }catch(e){ console.warn(e); }
   renderEstadoAdmin();
 }
@@ -3707,6 +3709,7 @@ function admAba(a){
   el('admWpp').style.display=a==='wpp'?'block':'none';
   el('admAud').style.display=a==='aud'?'block':'none';
   el('admDivulg').style.display=a==='divulg'?'block':'none';
+  el('admRelat').style.display=a==='relat'?'block':'none';
   el('tabInscr').classList.toggle('on',a==='inscr');
   el('tabBalcao').classList.toggle('on',a==='balcao');
   el('tabConfig').classList.toggle('on',a==='config');
@@ -3714,12 +3717,14 @@ function admAba(a){
   el('tabWpp').classList.toggle('on',a==='wpp');
   el('tabAud').classList.toggle('on',a==='aud');
   el('tabDivulg').classList.toggle('on',a==='divulg');
+  el('tabRelat').classList.toggle('on',a==='relat');
   if(a==='balcao') renderBalcao();
   if(a==='config') renderConfig();
   if(a==='cupons') renderCupons();
   if(a==='wpp') renderWpp();
   if(a==='aud') renderAuditoria();
   if(a==='divulg') renderDivulg();
+  if(a==='relat') renderRelatorios();
 }
 function filtrar(f,btn){ admFiltro=f; admLimite=20; document.querySelectorAll('#admFilters .fbtn').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); renderAdmin(); }
 
@@ -5956,6 +5961,373 @@ function gerarQR(){
   new QRCode(box,{ text:url, width:260, height:260, colorDark:"#171130", colorLight:"#ffffff", correctLevel:QRCode.CorrectLevel.H });
   setTimeout(()=>{ const cv=box.querySelector('canvas'); if(cv){ const a=document.createElement('a'); a.href=cv.toDataURL('image/png'); a.download='qrcode-corrida-everest.png'; a.className='btn btn-ghost'; a.style.marginTop='12px'; a.textContent='Baixar QR (PNG)'; el('qrdl').appendChild(a); } },250);
   toast("QR gerado!");
+}
+
+/* ===================== RELATÓRIOS ===================== */
+/* RELATÓRIO DA CORRIDA — versão 1, ESPECÍFICA DA 2ª EDIÇÃO (2026).
+
+   Os números abaixo são FIXOS: vieram do fechamento informado pela
+   organização. Nada aqui é lido do Firestore, e nada é gravado — o módulo
+   inteiro não toca em `fdb` nem na camada `DB`.
+
+   FASE 2 (futura): `dadosDoRelatorio()` passa a calcular este mesmo objeto
+   a partir das inscrições reais. `montarRelatorioHTML()` recebe os dados
+   como objeto e não conhece a origem — o layout não muda.
+
+   NÃO use estes números para corrigir estoque, inscrições ou configurações. */
+const RELATORIO_2026 = {
+  evento: '2ª Corrida Everest',
+  edicao: 'Edição 2026',
+  endereco: 'Rua São José',
+  bairro: 'Cruzeiro',
+  cidade: 'Gravatá/PE',
+  local: 'Rua São José – Cruzeiro – Gravatá/PE',
+  data: '20/09/2026',
+  horario: '05:30 às 10:00',
+  setores: [
+    { descricao:'1º lote',  capacidade:80, quantidade:69, meiaEntrada:null, valorUnitario:69.90, total:4823.10 },
+    { descricao:'2º lote',  capacidade:80, quantidade:72, meiaEntrada:null, valorUnitario:74.90, total:5392.80 },
+    { descricao:'3º lote',  capacidade:80, quantidade:67, meiaEntrada:null, valorUnitario:79.90, total:5353.30 },
+    { descricao:'Cortesia', capacidade:60, quantidade:92, meiaEntrada:null, valorUnitario:null,  total:null }
+  ],
+  totais: { publicoMaximo:300, quantidade:300, totalIngressos:300, valorTotal:15569.20 }
+};
+
+/* Ponto único de origem dos dados. Fase 2: trocar SÓ esta função. */
+function dadosDoRelatorio(){ return RELATORIO_2026; }
+
+/* Formatação brasileira, sem depender do Intl do aparelho:
+   15569.2 -> "R$ 15.569,20" · null -> "—" */
+function brlRel(v){
+  if(v===null || v===undefined || v==='') return '—';
+  const c = Math.round(Number(v)*100); if(!isFinite(c)) return '—';
+  const a = Math.abs(c);
+  const inteiro = String(Math.floor(a/100)).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+  return (c<0?'-':'')+'R$ '+inteiro+','+String(a%100).padStart(2,'0');
+}
+/* 1500 -> "1.500" · null -> "—" */
+function numRel(v){
+  if(v===null || v===undefined || v==='') return '—';
+  const n = Math.round(Number(v)); if(!isFinite(n)) return '—';
+  return (n<0?'-':'')+String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+}
+/* Instante -> "02/10/2026 às 14:05", sempre no horário de Brasília. */
+function dataHoraBrasiliaRel(t){
+  const p = new Intl.DateTimeFormat('en-CA',{ timeZone:'America/Recife', year:'numeric', month:'2-digit',
+    day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false })
+    .formatToParts(new Date(t)).reduce((o,x)=>(o[x.type]=x.value,o),{});
+  return `${p.day}/${p.month}/${p.year} às ${p.hour==='24'?'00':p.hour}:${p.minute}`;
+}
+
+/* CÓDIGO DA EMISSÃO — apenas um IDENTIFICADOR: SHA-256 de (conteúdo do
+   relatório + instante + conta que emitiu). Não é gravado em lugar nenhum (o
+   relatório não escreve no banco), então NÃO existe validação online nesta
+   versão. Não descreva este código como "autenticação" ou "verificação" em
+   texto visível — ele identifica a emissão, não prova nada sozinho. */
+async function codigoAutenticacaoRelatorio(dados, quando, uid){
+  const base = JSON.stringify(dados)+'|'+quando+'|'+(uid||'');
+  let hex = '';
+  try{
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(base));
+    hex = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){
+    // Sem crypto.subtle (página fora de HTTPS): FNV-1a, só para identificar.
+    for(let s=0;s<3;s++){
+      let h = (0x811c9dc5 ^ Math.imul(s+1, 0x9e3779b9))>>>0;
+      for(let i=0;i<base.length;i++){ h ^= base.charCodeAt(i); h = Math.imul(h, 0x01000193)>>>0; }
+      hex += h.toString(16).padStart(8,'0');
+    }
+  }
+  return hex.slice(0,20).toUpperCase().match(/.{4}/g).join('-');
+}
+
+/* Logo já embutida na página (data URI) — não baixa nada. */
+function logoDoRelatorio(){
+  const im = document.querySelector('.brand .mk');
+  return (im && /^data:image\//.test(im.src)) ? im.src : null;
+}
+/* QR do endereço oficial do site, desenhado fora da tela. */
+function qrDoRelatorio(url){
+  try{
+    if(typeof QRCode==='undefined' || !url) return null;
+    const box = document.createElement('div');
+    new QRCode(box,{ text:url, width:240, height:240, colorDark:'#1d1733', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.M });
+    const cv = box.querySelector('canvas');
+    return cv ? cv.toDataURL('image/png') : null;
+  }catch(e){ return null; }
+}
+
+/* Quem, quando e de onde. Lê só a sessão em memória — nenhuma leitura no banco. */
+async function montarEmissaoRelatorio(dados, u){
+  const quando = Date.now();
+  const origem = (CONFIG && CONFIG.siteUrl) || urlDoSite();
+  return {
+    quando,
+    quandoTexto: dataHoraBrasiliaRel(quando),
+    nome: (u && (u.displayName || u.email)) || 'Modo local',
+    email: (u && u.email) || '',
+    autenticado: !!u && !MODO_DEMO,
+    origem,
+    codigo: await codigoAutenticacaoRelatorio(dados, quando, u && u.uid),
+    logo: logoDoRelatorio(),
+    qr: qrDoRelatorio(origem)
+  };
+}
+
+/* MONTAGEM DO RELATÓRIO — função pura: recebe os dados e a emissão como
+   objetos e devolve o documento HTML completo (A4, CSS próprio). Não lê
+   nada de fora. Na fase 2 continua igual. */
+function montarRelatorioHTML(d, em){
+  const t = d.totais || {};
+  const linhas = (d.setores||[]).map((s,i)=>`
+        <tr${s.valorUnitario==null?' class="cortesia"':''}>
+          <td class="setor"><span class="n">${i+1}</span>${esc(s.descricao)}</td>
+          <td class="num">${numRel(s.capacidade)}</td>
+          <td class="num">${numRel(s.quantidade)}</td>
+          <td class="num">${brlRel(s.meiaEntrada)}</td>
+          <td class="num">${brlRel(s.valorUnitario)}</td>
+          <td class="num forte">${brlRel(s.total)}</td>
+        </tr>`).join('');
+  const logo = em.logo ? `<img class="logo" src="${em.logo}" alt="">` : '';
+  const qr = em.qr ? `<div class="qr"><img src="${em.qr}" alt=""><span>Site oficial da corrida</span></div>` : '';
+  const quem = em.autenticado
+    ? `${esc(em.nome)}${em.email && em.email!==em.nome ? ` <span class="sec">· ${esc(em.email)}</span>` : ''}`
+    : esc(em.nome);
+  const acesso = em.autenticado
+    ? 'Conta Google autenticada · administrador verificado no sistema'
+    : 'Modo local de demonstração · sem autenticação';
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relatório da Corrida — ${esc(d.evento)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+@page{size:A4 portrait;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:#e8e6ef}
+body{font-family:'Montserrat',Arial,Helvetica,sans-serif;color:#1d1733;font-size:9.4pt;line-height:1.38;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact}
+.barra{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;
+  padding:12px 16px;background:#1d1733;box-shadow:0 2px 12px rgba(0,0,0,.25)}
+.barra button{font:700 13px/1 'Montserrat',Arial,sans-serif;border-radius:999px;padding:11px 22px;cursor:pointer}
+.b-imp{background:#ffc93c;color:#2a1450;border:1px solid #ffc93c}
+.b-fec{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.45)}
+.barra small{color:#cfc6ee;font-size:11.5px;width:100%;text-align:center}
+.folha{width:210mm;height:297mm;margin:10mm auto 14mm;background:#fff;padding:13mm 14mm 10mm;
+  box-shadow:0 8px 30px rgba(20,10,50,.22);display:flex;flex-direction:column;overflow:hidden}
+.folha>*{flex-shrink:0}
+/* ---------- topo ---------- */
+.topo{display:flex;justify-content:space-between;align-items:flex-start;gap:8mm}
+.marca{display:flex;align-items:center;gap:4.5mm}
+.logo{width:17mm;height:17mm;object-fit:contain;border-radius:3mm;background:#2a1450;padding:1.6mm}
+.sobre{font-size:7.6pt;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:#6d3ff0}
+h1{font-size:19pt;line-height:1.1;font-weight:800;color:#2a1450;margin-top:.6mm}
+.sub{font-size:8.6pt;color:#5b5378;margin-top:1mm}
+.selo{border:1.2px solid #2a1450;border-radius:2.5mm;padding:2.6mm 3.6mm;text-align:right;min-width:52mm}
+.selo .t{font-size:7pt;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#2a1450}
+.selo .c{font-family:'Courier New',Consolas,monospace;font-size:9.6pt;font-weight:700;color:#1d1733;margin-top:1mm;letter-spacing:.02em}
+.selo .d{font-size:7.4pt;color:#5b5378;margin-top:.8mm}
+.faixa{height:2.2mm;margin:5mm 0 6mm;border-radius:1mm;background:linear-gradient(90deg,#2a1450 0 72%,#ffc93c 72% 100%)}
+/* ---------- seções ---------- */
+.sec-t{display:flex;align-items:center;gap:2.5mm;font-size:8.2pt;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:#2a1450;margin:0 0 2.6mm}
+.sec-t .n{display:inline-flex;align-items:center;justify-content:center;width:5.2mm;height:5.2mm;border-radius:50%;
+  background:#2a1450;color:#ffc93c;font-size:7.6pt;letter-spacing:0}
+.bloco{margin-bottom:5.5mm}
+.grade{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid #cfc9e0;border-radius:2mm;overflow:hidden}
+.campo{padding:2.2mm 3mm;border-right:1px solid #e3dfee;border-bottom:1px solid #e3dfee}
+.campo .r{font-size:6.9pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7a7296}
+.campo .v{font-size:10.6pt;font-weight:700;color:#1d1733;margin-top:.5mm}
+.campo .v.g{font-size:13pt;color:#2a1450}
+.s6{grid-column:span 6}.s4{grid-column:span 4}.s3{grid-column:span 3}.s2{grid-column:span 2}
+.campo .v small{font-size:7.2pt;font-weight:600;color:#7a7296;margin-left:1mm}
+.campo.ult{border-right:0}.campo.base{border-bottom:0}
+/* ---------- tabela ---------- */
+table{width:100%;border-collapse:collapse;font-size:9.4pt}
+thead th{background:#2a1450;color:#fff;font-size:7pt;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:2.4mm 2.6mm;text-align:right;vertical-align:bottom;line-height:1.25}
+thead th:first-child{text-align:left;border-top-left-radius:2mm}
+thead th:last-child{border-top-right-radius:2mm}
+tbody td{padding:2.5mm 2.6mm;border-bottom:1px solid #e3dfee}
+tbody tr:nth-child(even) td{background:#f7f5fc}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.forte{font-weight:700}
+td.setor{font-weight:700;color:#2a1450}
+td.setor .n{display:inline-block;width:4.6mm;color:#8a82a8;font-weight:600}
+tr.cortesia td{color:#5b5378}
+tfoot td{padding:2.6mm;font-weight:800;color:#2a1450;border-top:1.4px solid #2a1450;background:#efebfa}
+tr{break-inside:avoid}
+.resumo-t{font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7a7296;margin-top:4mm}
+.resumo{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-top:1.6mm}
+.res{border:1px solid #cfc9e0;border-radius:2mm;padding:3mm 3.6mm;display:flex;justify-content:space-between;align-items:center}
+.res .r{font-size:7.4pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#5b5378}
+.res .v{font-size:13.5pt;font-weight:800;color:#2a1450;font-variant-numeric:tabular-nums;white-space:nowrap}
+.res.dest{background:#2a1450;border-color:#2a1450}
+.res.dest .r{color:#d9d0f7}.res.dest .v{color:#ffc93c}
+/* ---------- emissão ---------- */
+.aut{display:flex;gap:5mm;border:1px solid #cfc9e0;border-left:1.6mm solid #ffc93c;border-radius:2mm;padding:3.4mm 4mm;align-items:center}
+.aut-txt{flex:1;min-width:0}
+.aut dl{display:grid;grid-template-columns:34mm 1fr;row-gap:1.3mm;column-gap:3mm;font-size:8.6pt}
+.aut dt{font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7a7296;padding-top:.5mm}
+.aut dd{font-weight:600;color:#1d1733;word-break:break-word}
+.aut dd .sec{font-weight:500;color:#5b5378}
+.aut dd.cod{font-family:'Courier New',Consolas,monospace;font-size:10pt;font-weight:700;letter-spacing:.03em}
+.aut p{font-size:7.4pt;color:#5b5378;line-height:1.45;margin-top:2mm}
+.qr{width:27mm;text-align:center;flex:none}
+.qr img{width:27mm;height:27mm;display:block}
+.qr span{display:block;font-size:6.4pt;color:#5b5378;margin-top:1mm;line-height:1.2}
+/* ---------- assinatura e rodapé ---------- */
+.ass{display:flex;justify-content:flex-end;margin-top:auto;padding-top:8mm}
+.ass div{width:78mm;border-top:1px solid #1d1733;padding-top:1.6mm;text-align:center;font-size:8pt;color:#1d1733}
+.ass small{display:block;font-size:7pt;color:#7a7296;margin-top:.4mm}
+.rodape{display:flex;justify-content:space-between;gap:4mm;border-top:1px solid #e3dfee;margin-top:6mm;padding-top:2.4mm;
+  font-size:6.9pt;color:#7a7296}
+@media screen{.folha{zoom:var(--z,1)}}
+@media print{
+  html,body{background:#fff}
+  .barra{display:none!important}
+  .folha{margin:0;box-shadow:none;height:296.5mm}
+}
+</style>
+</head>
+<body>
+<div class="barra">
+  <button type="button" class="b-imp" onclick="window.print()">Imprimir / Salvar PDF</button>
+  <button type="button" class="b-fec" onclick="window.close()">Fechar</button>
+  <small>Na janela de impressão: papel A4, escala 100%. Para PDF, escolha “Salvar como PDF”.</small>
+</div>
+<main class="folha">
+  <header class="topo">
+    <div class="marca">
+      ${logo}
+      <div>
+        <div class="sobre">Relatório da Corrida</div>
+        <h1>${esc(d.evento)}</h1>
+        <div class="sub">${esc(d.edicao)} · ${esc(d.data)} · ${esc(d.cidade)}</div>
+      </div>
+    </div>
+    <div class="selo">
+      <div class="t">Emitido pelo sistema oficial</div>
+      <div class="c">${esc(em.codigo)}</div>
+      <div class="d">Código da emissão · ${esc(em.quandoTexto)}</div>
+    </div>
+  </header>
+  <div class="faixa"></div>
+
+  <section class="bloco">
+    <h2 class="sec-t"><span class="n">1</span>Dados do evento</h2>
+    <div class="grade">
+      <div class="campo s4"><div class="r">Nome do evento</div><div class="v g">${esc(d.evento)}</div></div>
+      <div class="campo s2 ult"><div class="r">Data do evento</div><div class="v g">${esc(d.data)}</div></div>
+      <div class="campo s2"><div class="r">Endereço</div><div class="v">${esc(d.endereco)}</div></div>
+      <div class="campo s2"><div class="r">Bairro</div><div class="v">${esc(d.bairro)}</div></div>
+      <div class="campo s2 ult"><div class="r">Cidade</div><div class="v">${esc(d.cidade)}</div></div>
+      <div class="campo s2 base"><div class="r">Horário de realização</div><div class="v">${esc(d.horario)}</div></div>
+      <div class="campo s2 base"><div class="r">Público máximo do evento</div><div class="v g">${numRel(t.publicoMaximo)}</div></div>
+      <div class="campo s2 base ult"><div class="r">Ingressos disponibilizados</div><div class="v g">${numRel(t.totalIngressos)}<small>incluídas as cortesias</small></div></div>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <h2 class="sec-t"><span class="n">2</span>Ingressos por setor</h2>
+    <table>
+      <thead><tr>
+        <th>Setor</th><th>Capacidade</th><th>Quantidade</th><th>Meia-entrada</th><th>Valor unitário</th><th>Total do setor</th>
+      </tr></thead>
+      <tbody>${linhas}
+      </tbody>
+      <tfoot><tr>
+        <td>Total</td>
+        <td class="num">${numRel(t.publicoMaximo)}</td>
+        <td class="num">${numRel(t.quantidade)}</td>
+        <td></td><td></td>
+        <td class="num">${brlRel(t.valorTotal)}</td>
+      </tr></tfoot>
+    </table>
+    <div class="resumo-t">Resumo das inscrições e valores registrados no sistema</div>
+    <div class="resumo">
+      <div class="res"><span class="r">Inscrições registradas</span><span class="v">${numRel(t.quantidade)}</span></div>
+      <div class="res dest"><span class="r">Valor total registrado</span><span class="v">${brlRel(t.valorTotal)}</span></div>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <h2 class="sec-t"><span class="n">3</span>Emissão</h2>
+    <div class="aut">
+      <div class="aut-txt">
+      <dl>
+        <dt>Emitido por</dt><dd>${quem}</dd>
+        <dt>Acesso</dt><dd>${esc(acesso)}</dd>
+        <dt>Data e hora</dt><dd>${esc(em.quandoTexto)} <span class="sec">(horário de Brasília)</span></dd>
+        <dt>Origem</dt><dd>Painel do Organizador · ${esc(em.origem)}</dd>
+        <dt>Código da emissão</dt><dd class="cod">${esc(em.codigo)}</dd>
+      </dl>
+      <p>Documento gerado automaticamente pelo sistema oficial de inscrições da ${esc(d.evento)}${em.autenticado ? ', por uma conta autenticada com perfil de administrador' : ''}. O código da emissão é apenas um identificador calculado no momento da emissão; nesta versão não existe validação online desse código.</p>
+      </div>
+      ${qr}
+    </div>
+  </section>
+
+  <div class="ass"><div>Responsável pela organização<small>${esc(d.evento)}</small></div></div>
+
+  <footer class="rodape">
+    <span>Everest Academia · ${esc(em.origem)}</span>
+    <span>Relatório da Corrida · ${esc(d.edicao)} · Página 1 de 1</span>
+  </footer>
+</main>
+<script>
+/* Em tela estreita (celular), reduz a FOLHA para caber na largura. Só na tela:
+   a impressão continua em A4 real, sem zoom. */
+(function(){
+  function ajustar(){
+    var z = Math.min(1, (window.innerWidth - 16) / 794);
+    document.documentElement.style.setProperty('--z', z > 0.2 ? z : 1);
+  }
+  window.addEventListener('resize', ajustar); ajustar();
+})();
+<\/script>
+</body>
+</html>`;
+}
+
+/* Aba "Relatórios" do painel. Só desenha — não lê o banco. */
+function renderRelatorios(){
+  const d = dadosDoRelatorio();
+  el('admRelat').innerHTML = `
+    <div class="cfg-sec">
+      <h3>Relatório da corrida</h3>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;margin:-6px 0 14px">${esc(d.evento)} · ${esc(d.data)} · ${esc(d.horario)}<br>${esc(d.local)}</p>
+      <p style="color:var(--txt);font-size:13px;line-height:1.6;margin-bottom:16px">Dados do evento, ingressos por setor e valores registrados no sistema, com a identificação de quem emitiu e um código da emissão (identificador, sem validação online nesta versão). Abre em uma janela própria, no formato A4, pronta para imprimir ou salvar em PDF.</p>
+      <button class="btn btn-cta" onclick="imprimirRelatorio()"><span>Imprimir Relatório da Corrida</span></button>
+      <p style="color:var(--muted);font-size:12px;line-height:1.5;margin-top:14px">Versão desta edição: números fixos. O cálculo automático a partir das inscrições virá em uma próxima versão. Nenhum dado do banco é lido ou alterado.</p>
+    </div>`;
+}
+
+/* Abre o relatório numa JANELA PRÓPRIA. A janela é aberta ANTES de qualquer
+   `await` — senão o navegador trata como pop-up não solicitado e bloqueia.
+   O painel nunca chama window.print(): quem imprime é a janela do relatório. */
+async function imprimirRelatorio(){
+  const u = usuarioAtual();
+  const autorizado = MODO_DEMO || (!!u && admPermissao.ok === true && admPermissao.uid === u.uid);
+  if(!autorizado){ toast('Entre no painel com uma conta autorizada para emitir o relatório'); return; }
+  let w = null;
+  try{ w = window.open('', '_blank'); }catch(e){ w = null; }
+  if(!w){ toast('O navegador bloqueou a janela do relatório. Permita pop-ups para este site e tente de novo.'); return; }
+  try{ w.document.write('<!DOCTYPE html><meta charset="utf-8"><title>Gerando relatório…</title><p style="font-family:Arial,sans-serif;padding:24px;color:#333">Gerando relatório…</p>'); }catch(e){}
+  try{
+    const dados = dadosDoRelatorio();
+    const emissao = await montarEmissaoRelatorio(dados, u);
+    const html = montarRelatorioHTML(dados, emissao);
+    w.document.open(); w.document.write(html); w.document.close();
+    try{ w.focus(); }catch(e){}
+  }catch(e){
+    console.error(e);
+    try{ w.close(); }catch(_){}
+    toast('Não consegui gerar o relatório. Tente de novo.');
+  }
 }
 
 /* ===================== UTIL ===================== */
